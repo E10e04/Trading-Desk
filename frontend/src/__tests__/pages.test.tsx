@@ -131,3 +131,25 @@ describe('thème', () => {
     expect(readMode()).toBe('light');
   });
 });
+
+describe('ordre manuel', () => {
+  it('un ordre refusé par le moteur (HTTP 201 mais statut rejected) n’est jamais présenté comme envoyé', async () => {
+    const calls = mockApi({
+      '/api/portfolios': { items: [{ id: 1, name: 'P' }] },
+      '/api/orders': () => ({ id: 9, status: 'rejected', reject_reason: 'marge insuffisante' }),
+      '/api/instruments': { items: [] },
+    });
+    const { OrderModal } = await import('../components/OrderModal');
+    const { MarketProvider } = await import('../lib/market');
+    const onClose = vi.fn();
+    render(<MemoryRouter><ToastProvider><MarketProvider><OrderModal symbol="EURUSD" onClose={onClose} /></MarketProvider></ToastProvider></MemoryRouter>);
+    await waitFor(() => expect((screen.getByLabelText('Quantité') as HTMLInputElement)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Quantité'), { target: { value: '1000' } });
+    const btn = screen.getByText('Envoyer l’ordre');
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(false));
+    await act(async () => { fireEvent.click(btn); });
+    expect(await screen.findByText(/marge insuffisante/)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url === '/api/orders')).toBe(true);
+  });
+});

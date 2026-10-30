@@ -11,5 +11,5 @@ export default defineConfig({
     },
   },
   build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 900 },
-  test: { environment: 'jsdom', setupFiles: ['./src/test-setup.ts'], globals: true, css: false },
+  test: { environment: 'jsdom', setupFiles: ['./src/test-setup.ts'], globals: true, css: false, include: ['src/**/*.test.{ts,tsx}'] },
 });

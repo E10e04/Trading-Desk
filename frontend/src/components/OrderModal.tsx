@@ -28,9 +28,13 @@ export function OrderModal({ symbol: initial, onClose, onDone }: { symbol?: stri
     setBusy(true);
     setErr(null);
     try {
-      await api('/api/orders', { body: { portfolio_id: pf.sel, symbol, side, type, qty: n(qty), limit_price: type.includes('limit') ? n(limit) : null, stop_price: type.startsWith('stop') ? n(stopP) : null, tif: 'gtc', stop_loss: n(sl), take_profit: n(tp) } });
-      toast('success', 'Ordre papier envoyé', `${side === 'buy' ? 'Achat' : 'Vente'} ${qty} ${symbol}`);
+      const o = await api<{ status: string; reject_reason?: string | null }>('/api/orders', { body: { portfolio_id: pf.sel, symbol, side, type, qty: n(qty), limit_price: type.includes('limit') ? n(limit) : null, stop_price: type.startsWith('stop') ? n(stopP) : null, tif: 'gtc', stop_loss: n(sl), take_profit: n(tp) } });
       onDone?.();
+      if (o.status === 'rejected') {
+        setErr(`Ordre refusé par le moteur : ${o.reject_reason ?? 'motif non précisé'}`);
+        return;
+      }
+      toast('success', o.status === 'filled' ? 'Ordre papier exécuté' : 'Ordre papier envoyé', `${side === 'buy' ? 'Achat' : 'Vente'} ${qty} ${symbol}`);
       onClose();
     } catch (e) {
       setErr((e as Error).message);

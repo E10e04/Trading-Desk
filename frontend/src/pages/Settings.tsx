@@ -110,7 +110,7 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
       <div className="grid c2">
         <Panel title="Modèle et test de connexion" actions={<button className="btn" onClick={runTest} disabled={testing}>{testing ? 'Test…' : 'Tester la connexion'}</button>}>
           <div className="stack">
-            <Field label="Modèle à tester" hint={`Modèle par défaut : ${models.data?.default ?? s?.default_model ?? 'minimax/minimax-m3.1-flash'}`}>{(id) => <><input id={id} className="input" list="all-models" value={model} onChange={(e) => setModel(e.target.value)} placeholder={models.data?.default ?? 'modèle par défaut'} /><datalist id="all-models">{(models.data?.items ?? []).slice(0, 1000).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</datalist></>}</Field>
+            <Field label="Modèle à tester" hint={`Modèle par défaut : ${models.data?.default ?? s?.default_model ?? 'minimax/minimax-m3.1-flash'}`}>{(id) => <><input id={id} className="input" list="all-models" value={model} onChange={(e) => setModel(e.target.value)} placeholder={models.data?.default ?? s?.default_model ?? 'modèle par défaut'} /><datalist id="all-models">{(models.data?.items ?? []).slice(0, 1000).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</datalist></>}</Field>
             {models.error && <Banner kind="warn">Catalogue indisponible : {models.error}</Banner>}
             {test && <Banner kind={test.ok ? 'info' : 'err'}>{test.ok ? <span>Connexion réussie avec <b>{test.model}</b> en {ms(test.latency_ms)}.</span> : <span>Échec : {test.error}</span>}</Banner>}
             <span className="muted">{models.data ? `${models.data.items.length} modèles disponibles` : ''}</span>
@@ -129,7 +129,7 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
       <Panel title="Modèle par agent" flush>
         <Async state={agents}>{(d) => <DataTable rows={d.items.filter((a) => a.uses_llm)} rowKey={(a) => a.id} empty={<Empty title="Aucun agent n’utilise l’IA" />} cols={[
           { key: 'a', header: 'Agent', render: (a) => a.name },
-          { key: 'm', header: 'Modèle', render: (a) => <ModelCell value={a.config.model ?? ''} placeholder={models.data?.default ?? 'par défaut'} items={models.data?.items ?? []} onSave={(m) => assign(a.id, m)} /> },
+          { key: 'm', header: 'Modèle', render: (a) => <ModelCell value={a.config.model ?? ''} placeholder={models.data?.default ?? s?.default_model ?? 'par défaut'} items={models.data?.items ?? []} onSave={(m) => assign(a.id, m)} /> },
         ]} />}</Async>
       </Panel>
       <Panel title="Appels récents" flush>
