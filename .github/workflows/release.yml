@@ -26,10 +26,21 @@ jobs:
         with: { python-version: '3.13' }
       - name: Environnement Python
         run: python -m venv backend/.venv
-      - name: Construction (frontend, backend embarqué, installateur)
+      - name: Frontend (build)
+        run: cd frontend && npm ci && npm run build
+      - name: Backend (dépendances)
+        run: |
+          PY=backend/.venv/bin/python; [ -x "$PY" ] || PY=backend/.venv/Scripts/python.exe
+          "$PY" -m pip install -r backend/requirements.lock.txt pyinstaller==6.11.1
+      - name: Backend embarqué (PyInstaller)
+        run: |
+          PY=.venv/bin/python; [ -x "backend/$PY" ] || PY=.venv/Scripts/python.exe
+          cd backend && "$PY" -m PyInstaller --noconfirm --distpath build-dist --workpath build-work trading-backend.spec
+          mkdir -p ../desktop/build && cp -R build-dist/trading-backend ../desktop/build/backend
+      - name: Installateur (Electron)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: ./scripts/build-desktop.sh ${{ matrix.target }}
+        run: cd desktop && npm ci && npm run dist:${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: trading-desk-${{ matrix.target }}
