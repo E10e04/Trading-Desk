@@ -21,3 +21,10 @@ desktop/out/
 desktop/backend-bin/
 # os
 .DS_Store
+
+backend/build-dist/
+backend/build-work/
+desktop/node_modules/
+desktop/release/
+desktop/build/backend/
+frontend/node_modules/

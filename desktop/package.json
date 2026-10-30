@@ -1,0 +1,31 @@
+{
+  "name": "trading-desk-desktop",
+  "version": "0.1.0",
+  "description": "Trading Desk — application de bureau (paper trading) : Windows et macOS 11+",
+  "main": "src/main.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/backend.test.js",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --x64"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "electron-builder": "24.13.3"
+  },
+  "build": {
+    "appId": "app.tradingdesk.desktop",
+    "productName": "Trading Desk",
+    "directories": { "output": "release" },
+    "files": ["src/**/*", "package.json"],
+    "extraResources": [
+      { "from": "../frontend/dist", "to": "frontend" },
+      { "from": "build/backend", "to": "backend" }
+    ],
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "mac": { "target": [{ "target": "dmg", "arch": ["x64"] }], "category": "public.app-category.finance", "minimumSystemVersion": "11.0" }
+  }
+}
