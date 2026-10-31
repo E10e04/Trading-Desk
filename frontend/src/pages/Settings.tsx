@@ -71,8 +71,25 @@ function Exec({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void
   );
 }
 
+function FeedDiagnostic() {
+  const [res, setRes] = useState<{ steps: { step: string; ok: boolean; detail: string }[]; status?: { mode?: string; state?: string; last_error?: string } } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => { setBusy(true); try { setRes(await api('/api/feed/diagnose', { method: 'POST' })); } catch (e) { setRes({ steps: [{ step: 'Diagnostic', ok: false, detail: (e as Error).message }] }); } finally { setBusy(false); } };
+  return (
+    <Panel title="Diagnostic du flux BiQuote">
+      <div className="stack">
+        <p className="muted">Teste chaque étape (REST, négociation SignalR, WebSocket, abonnement, réception) et indique laquelle échoue. Si le flux est coupé, l’application lit les prix en REST en attendant.</p>
+        <div className="row"><button className="btn" disabled={busy} onClick={run}>{busy ? 'Test en cours…' : 'Tester la connexion'}</button>{res?.status?.mode && <Pill kind={res.status.mode === 'stream' ? 'ok' : 'warn'}>{res.status.mode === 'stream' ? 'Flux temps réel' : 'Secours REST'}</Pill>}</div>
+        {res && <table className="tbl" aria-label="Résultat du diagnostic"><tbody>{res.steps.map((s) => <tr key={s.step}><td>{s.ok ? '✓' : '✗'} {s.step}</td><td>{s.detail}</td></tr>)}</tbody></table>}
+      </div>
+    </Panel>
+  );
+}
+
 function Data({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }) {
   return (
+    <>
+    <FeedDiagnostic />
     <Panel title="Données de marché">
       <Row title="Âge maximal d’une cotation pour exécuter (s)" hint="Un ordre n’est jamais exécuté sur une cotation plus vieille."><NumberSetting k="max_quote_age_s" vals={vals} save={save} /></Row>
       <Row title="Seuil « en direct » (s)" hint="Au-delà, la cotation est marquée périmée."><NumberSetting k="quote_live_s" vals={vals} save={save} /></Row>
@@ -81,6 +98,7 @@ function Data({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void
       <Row title="Instruments analysés par passage du Scanner"><NumberSetting k="scanner_max_instruments" vals={vals} save={save} /></Row>
       <Row title="Intervalle d’enregistrement de l’equity (s)"><NumberSetting k="equity_snapshot_s" vals={vals} save={save} /></Row>
     </Panel>
+    </>
   );
 }
 

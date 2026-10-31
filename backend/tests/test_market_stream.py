@@ -254,3 +254,34 @@ async def test_un_symbole_inconnu_dans_un_lot_n_empeche_pas_les_autres(fake_hub)
     assert st["subscribed"] == 2 and "BAD" in st["unavailable"]
     await p.stop_stream()
     await p.aclose()
+
+
+async def test_secours_rest_quand_le_flux_est_injoignable():
+    """Si SignalR ne se connecte pas, les prix continuent d'arriver via /api/latest (repli REST)."""
+    def handler(req: httpx.Request):
+        if req.url.path == "/api/latest":
+            assert req.url.params.get_list("symbols") == ["EURUSD"]
+            return httpx.Response(200, json=[{"symbol": "EURUSD", "bid": 1.1, "ask": 1.1002, "mid": 1.1001, "timestamp": "2026-10-28T08:00:00Z"}])
+        return httpx.Response(404)
+    p = BiquoteProvider(base_url="http://127.0.0.1:9", http_transport=httpx.MockTransport(handler), backoff_max=0.2)
+    p.poll_interval, p.poll_after = 0.05, 0.1
+    got: list[Quote] = []
+    await p.start_stream(lambda q: got.append(q))
+    await p.subscribe(["EURUSD"])
+    for _ in range(60):
+        if got:
+            break
+        await asyncio.sleep(0.1)
+    st = p.stream_status()
+    await p.stop_stream()
+    assert got and got[0].symbol == "EURUSD" and st["mode"] == "polling"
+    assert len([q for q in got if q.symbol == "EURUSD"]) == 1  # dédoublonnage : même cotation, un seul tick
+
+
+async def test_diagnostic_etape_par_etape(fake_hub):
+    p = BiquoteProvider(base_url=fake_hub.url, http_transport=None)
+    steps = await p.diagnose()
+    names = [s["step"] for s in steps]
+    assert "Négociation SignalR" in names and "WebSocket + handshake" in names and any(n.startswith("Subscribe") for n in names)
+    assert next(s for s in steps if s["step"] == "WebSocket + handshake")["ok"]
+    await p.aclose()

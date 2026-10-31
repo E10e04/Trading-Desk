@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ssl
 import time
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -20,6 +21,18 @@ from websockets.asyncio.client import connect as ws_connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 log = logging.getLogger(__name__)
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Certificats Mozilla (certifi) : l'application embarquée (PyInstaller, surtout sous macOS) n'a pas toujours les
+    certificats du système, ce qui faisait échouer le WebSocket sécurisé alors que le REST (httpx + certifi) fonctionnait."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # pragma: no cover
+        return ssl.create_default_context()
+
+
 RS = "\x1e"  # séparateur d'enregistrement SignalR
 Handler = Callable[..., Awaitable[None] | None]
 
@@ -72,8 +85,16 @@ class SignalRClient:
                 except Exception as e:  # repli : connexion directe (skipNegotiation côté serveur)
                     log.warning("négociation SignalR impossible (%s) — tentative de connexion WebSocket directe", e)
             ws_url = self._ws_url(token)
-            self._ws = await ws_connect(ws_url, additional_headers=self.headers or None, open_timeout=self.handshake_timeout,
-                                        max_size=None, ping_interval=None, close_timeout=2)
+            extra: dict[str, Any] = {}
+            if ws_url.startswith("wss://"):
+                extra["ssl"] = _ssl_context()
+            hdrs = dict(self.headers)
+            origin = hdrs.pop("Origin", None) or f"{'https' if ws_url.startswith('wss') else 'http'}://{urlsplit(ws_url).netloc}"
+            ua = hdrs.pop("User-Agent", None)
+            if ua:
+                extra["user_agent_header"] = ua
+            self._ws = await ws_connect(ws_url, additional_headers=hdrs or None, origin=origin, open_timeout=self.handshake_timeout,
+                                        max_size=None, ping_interval=None, close_timeout=2, **extra)
             await self._handshake()
         except Exception:
             self.state = "disconnected"
@@ -87,7 +108,7 @@ class SignalRClient:
 
     async def _negotiate(self) -> str | None:
         url = f"{self.base_url}{self.hub_path}/negotiate?negotiateVersion=1"
-        async with httpx.AsyncClient(timeout=self.negotiate_timeout, transport=self._http_transport, headers=self.headers) as c:
+        async with httpx.AsyncClient(timeout=self.negotiate_timeout, transport=self._http_transport, headers=self.headers) as c:  # httpx : certifi par défaut
             r = await c.post(url)
             r.raise_for_status()
             data = r.json()

@@ -73,3 +73,12 @@ async def bars(symbol: str, tf: str = "5m", limit: int = Query(300, le=5000), rt
 @router.get("/feed/status")
 def feed_status(rt: Runtime = Depends(runtime)):
     return rt.feed.health()
+
+
+@router.post("/feed/diagnose")
+async def feed_diagnose(rt: Runtime = Depends(runtime)):
+    """Teste le fournisseur étape par étape (REST, négociation, WebSocket, abonnement, réception)."""
+    fn = getattr(rt.provider, "diagnose", None)
+    if fn is None:
+        return {"steps": [], "note": "ce fournisseur n'a pas de diagnostic"}
+    return {"steps": await fn(), "status": rt.feed.health()["stream"]}
