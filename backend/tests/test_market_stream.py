@@ -285,3 +285,17 @@ async def test_diagnostic_etape_par_etape(fake_hub):
     assert "Négociation SignalR" in names and "WebSocket + handshake" in names and any(n.startswith("Subscribe") for n in names)
     assert next(s for s in steps if s["step"] == "WebSocket + handshake")["ok"]
     await p.aclose()
+
+
+def test_tick_du_flux_sans_age_est_juge_sur_son_horodatage():
+    """Cotation en cache vieille de 11 h reçue à l'abonnement (marché fermé) : elle ne doit pas passer pour « en direct »."""
+    now = dt.datetime(2026, 10, 31, 8, 16, 0)
+    old = normalize_tick({"symbol": "EURUSD", "mid": 1.1, "timestamp": "2026-10-30T20:59:00Z"}, now=now)
+    assert old and old.age_at_recv_s > 40000
+    assert BarStore().update(old) == [] and not BarStore().live_bars("EURUSD", "1m")  # pas de fausse bougie
+    fresh = normalize_tick({"symbol": "EURUSD", "mid": 1.1, "timestamp": "2026-10-31T08:15:59Z"}, now=now)
+    assert fresh and fresh.age_at_recv_s == 1
+    skewed = normalize_tick({"symbol": "EURUSD", "mid": 1.1, "timestamp": "2026-10-31T08:15:59Z"}, now=now, skew_s=90)  # PC en avance de 90 s
+    assert skewed and skewed.age_at_recv_s == 0
+    no_ts = normalize_tick({"symbol": "EURUSD", "mid": 1.1}, now=now)
+    assert no_ts and no_ts.age_at_recv_s == 0

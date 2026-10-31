@@ -51,7 +51,7 @@ def _pick(d: dict, *names: str) -> Any:
     return None
 
 
-def normalize_tick(raw: Any, provider: str = "biquote", now: dt.datetime | None = None) -> Quote | None:
+def normalize_tick(raw: Any, provider: str = "biquote", now: dt.datetime | None = None, skew_s: float = 0.0) -> Quote | None:
     """Valide et normalise un tick brut. Retourne None si le tick est inutilisable."""
     if not isinstance(raw, dict):
         return None
@@ -72,13 +72,19 @@ def normalize_tick(raw: Any, provider: str = "biquote", now: dt.datetime | None 
     if state not in ("open", "closed"):
         state = "unknown"
     age = _pick(raw, "quoteAgeSeconds", "ageSeconds")
+    ts_source = parse_ts(_pick(raw, "timestamp", "time", "ts", "lastQuoteAt", "t"))
+    recv = now or utcnow()
     try:
-        age_f = min(max(float(age), 0.0), 1e7) if age is not None else 0.0
+        age_f = min(max(float(age), 0.0), 1e7) if age is not None else None
     except (TypeError, ValueError):
-        age_f = 0.0
-    return Quote(symbol=sym, bid=bid, ask=ask, mid=mid,
-                 ts_source=parse_ts(_pick(raw, "timestamp", "time", "ts", "lastQuoteAt", "t")),
-                 ts_recv=now or utcnow(), market_state=state, provider=provider, age_at_recv_s=age_f)
+        age_f = None
+    if age_f is None:
+        # Le flux SignalR ne donne pas l'âge : on le déduit de l'horodatage du tick (corrigé du décalage d'horloge entre
+        # cet ordinateur et le serveur). Sans cela, la dernière cotation en cache (marché fermé, parfois vieille de
+        # plusieurs heures) envoyée à l'abonnement était prise pour un prix « en direct » et dessinait une fausse bougie.
+        age_f = min(max((recv - ts_source).total_seconds() - skew_s, 0.0), 1e7) if ts_source else 0.0
+    return Quote(symbol=sym, bid=bid, ask=ask, mid=mid, ts_source=ts_source,
+                 ts_recv=recv, market_state=state, provider=provider, age_at_recv_s=age_f)
 
 
 def parse_bars(payload: Any) -> list[Bar]:
@@ -137,6 +143,7 @@ class BiquoteProvider(MarketDataProvider):
             "state": "disconnected", "connected_since": None, "last_tick_at": None, "ticks_total": 0, "ticks_invalid": 0,
             "reconnects": 0, "last_error": None, "last_disconnect_reason": None, "mode": "stream",
         }
+        self.clock_skew_s = 0.0  # horloge locale − horloge du serveur (en-tête HTTP Date), pour mesurer l'âge réel des ticks
         self._poll_task: asyncio.Task | None = None
         self._poll_seen: dict[str, Any] = {}
         self.poll_interval = 5.0
@@ -149,6 +156,7 @@ class BiquoteProvider(MarketDataProvider):
         for attempt in range(retries):
             try:
                 r = await self._http.get(path, params=params)
+                self._update_skew(r)
                 if r.status_code == 429 or r.status_code >= 500:
                     raise ProviderError(f"BiQuote {r.status_code} sur {path}")
                 if r.status_code >= 400:
@@ -160,6 +168,19 @@ class BiquoteProvider(MarketDataProvider):
                     break  # erreur client définitive (symbole inconnu...)
                 await asyncio.sleep(min(0.5 * 2 ** attempt, 4) + random.random() * 0.2)
         raise ProviderError(f"BiQuote injoignable ({path}): {last}") from last
+
+    def _update_skew(self, r: httpx.Response) -> None:
+        d = r.headers.get("date")
+        if not d:
+            return
+        try:
+            from email.utils import parsedate_to_datetime
+            server = parsedate_to_datetime(d).astimezone(dt.timezone.utc).replace(tzinfo=None)
+        except (TypeError, ValueError):
+            return
+        skew = (utcnow() - server).total_seconds()
+        if abs(skew) <= 3600:  # la précision de l'en-tête est d'une seconde : on lisse
+            self.clock_skew_s = skew if self.clock_skew_s == 0.0 else 0.8 * self.clock_skew_s + 0.2 * skew
 
     async def list_instruments(self) -> list[Instrument]:
         rows = await self._get("/api/symbols", params={"quotedWithinDays": 7})
@@ -185,7 +206,7 @@ class BiquoteProvider(MarketDataProvider):
             for key, raw in rows:
                 if isinstance(raw, dict) and "symbol" not in {k.lower() for k in raw} and key:
                     raw = {**raw, "symbol": key}
-                q = normalize_tick(raw, self.name)
+                q = normalize_tick(raw, self.name, skew_s=self.clock_skew_s)
                 if q:
                     out[q.symbol] = q
         return out
@@ -305,7 +326,7 @@ class BiquoteProvider(MarketDataProvider):
         for a in args:
             rows.extend(a if isinstance(a, list) else [a])
         for raw in rows:
-            q = normalize_tick(raw, self.name)
+            q = normalize_tick(raw, self.name, skew_s=self.clock_skew_s)
             if q is None:
                 self.status["ticks_invalid"] += 1
                 continue
@@ -464,7 +485,9 @@ class BiquoteProvider(MarketDataProvider):
             if got:
                 q = normalize_tick(got[0][0] if got[0] else None)
                 ts = q.ts_source if q else None
-                detail = f"tick reçu — retard de l'horodatage {(utcnow() - ts).total_seconds():.1f} s" if ts else "tick reçu (sans horodatage exploitable)"
+                lag = (utcnow() - ts).total_seconds() - self.clock_skew_s if ts else None
+                detail = ("tick reçu (sans horodatage exploitable)" if lag is None else
+                          f"tick reçu — horodatage vieux de {lag:.0f} s" + (" : dernière cotation en cache, le marché est probablement fermé pour ce symbole (week-end)" if lag > 600 else " : flux en direct"))
             add("Réception ReceiveTick", bool(got), detail)
         except Exception as e:  # noqa: BLE001
             add("WebSocket / abonnement", False, f"{type(e).__name__}: {e}")
