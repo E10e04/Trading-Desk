@@ -14,8 +14,11 @@ let browser;
 before(async () => { browser = await chromium.launch(); });
 after(async () => { await browser?.close(); });
 
-async function open(path = '/', { width = 1360, height = 860, scheme = 'dark' } = {}) {
+const NO_UPDATE = { current: '0.2.0', latest: null, releases: [], update_available: false, error: null, repo: 'x' };
+async function open(path = '/', { width = 1360, height = 860, scheme = 'dark', update = NO_UPDATE } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
+  // La vérification de mise à jour interroge GitHub : on la rend déterministe pour que la fenêtre ne masque pas les autres tests.
+  await ctx.route('**/api/update/check*', (r) => r.fulfill({ json: update }));
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -216,6 +219,21 @@ describe('interface', () => {
     await page.keyboard.press('Tab');
     const outline = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
     assert.notEqual(outline, 'none');
+    await ctx.close();
+  });
+
+  test('mise à jour : fenêtre à l’ouverture, « Plus tard » ajoute l’icône en bas de la barre latérale', async () => {
+    const latest = { version: '9.9.9', tag: 'v9.9.9', name: 'x', notes: 'Notes', url: 'https://example.test/r', assets: [] };
+    const { ctx, page } = await open('/markets', { update: { current: '0.2.0', latest, releases: [latest], update_available: true, error: null, repo: 'x' } });
+    await page.getByText('Nouvelle version disponible').waitFor();
+    assert.equal(await page.locator('.rail-update').count(), 0);
+    await page.getByRole('button', { name: 'Plus tard' }).click();
+    const icon = page.locator('.rail-update');
+    await icon.waitFor();
+    const [rail, box] = await Promise.all([page.locator('.rail').boundingBox(), icon.boundingBox()]);
+    assert.ok(box.y + box.height > rail.y + rail.height - 40, 'icône tout en bas de la barre latérale');
+    await icon.click();
+    await page.getByText('Nouvelle version disponible').waitFor();
     await ctx.close();
   });
 });
