@@ -11,6 +11,7 @@ export interface Quote {
   ts: string;
   recv: string;
   lag_s?: number | null;
+  source?: string;
   freshness: 'live' | 'stale' | 'closed' | 'unknown';
   age_s: number | null;
   market_state: string;

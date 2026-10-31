@@ -17,6 +17,7 @@ DEFAULTS: dict[str, Any] = {
     "max_quote_age_s": 30,               # une cotation plus vieille ne peut pas servir à exécuter un ordre
     "quote_live_s": 30,
     "quote_hard_stale_s": 300,
+    "crypto_source": "kraken",           # kraken : prix du marché réel (Kraken) | biquote : CFD du courtier MT5 ; effectif au prochain démarrage
     "scanner_universe": "live",          # live | watchlist | all
     "scanner_max_instruments": 300,
     "llm_model": DEFAULT_MODEL,           # modèle OpenRouter utilisé par défaut par tous les agents (surchargeable par agent)

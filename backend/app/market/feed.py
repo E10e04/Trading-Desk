@@ -151,7 +151,7 @@ class MarketFeed:
         f = self.freshness(q.symbol)
         return {"symbol": q.symbol, "bid": q.bid, "ask": q.ask, "mid": q.mid, "spread": q.spread,
                 "ts": (q.ts_source or q.ts_recv).isoformat() + "Z", "recv": q.ts_recv.isoformat() + "Z",
-                "lag_s": self.source_lag(q), "freshness": f["status"], "age_s": f["age_s"], "market_state": self.states.get(q.symbol, q.market_state),
+                "lag_s": self.source_lag(q), "source": q.provider, "freshness": f["status"], "age_s": f["age_s"], "market_state": self.states.get(q.symbol, q.market_state),
                 "digits": inst.digits if inst else None}
 
     def instrument_view(self, symbol: str) -> dict[str, Any] | None:

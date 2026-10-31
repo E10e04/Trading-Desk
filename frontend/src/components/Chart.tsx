@@ -13,6 +13,7 @@ export interface PriceLine { price: number; title: string; kind: 'entry' | 'stop
 interface Bar { t: number; o: number; h: number; l: number; c: number }
 
 /** lightweight-charts affiche l'heure UTC ; TradingView affiche l'heure locale. On décale l'axe pour que les deux concordent. */
+const SOURCE: Record<string, string> = { biquote: 'BiQuote · MT5', kraken: 'Kraken' };
 const tzShift = (t: number) => t - new Date(t * 1000).getTimezoneOffset() * 60;
 
 function css(name: string): string {
@@ -115,6 +116,7 @@ export function Chart({ symbol, tf, height = 420, lines = [], digits }: { symbol
         <b>{symbol}</b>
         <span className="muted">{tf}</span>
         {q && <span className={q.freshness === 'live' ? 'up' : 'warn'}>{price(q.mid, digits)}</span>}
+        {q?.source && <span className="muted" title="Source des cotations">{SOURCE[q.source] ?? q.source}</span>}
         {q && q.freshness === 'live' && q.lag_s != null && Math.abs(q.lag_s) > 10 && <span className="warn" title="Écart entre l’horodatage du fournisseur et la réception">source en retard de {Math.round(q.lag_s)} s</span>}
         {q && q.freshness !== 'live' && <span className="warn">données {q.freshness === 'closed' ? 'marché fermé' : `périmées (${age(q.age_s)})`}</span>}
       </div>

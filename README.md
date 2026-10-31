@@ -114,3 +114,9 @@ MIT. Les skills vendorisés restent © Jake Schincariol (MIT), voir `backend/app
 - Publier : Actions › « Release desktop apps » › Run workflow avec `version` (ex. 0.2.0). Le workflow injecte la version, construit les installateurs, crée le tag `vX.Y.Z` et la release.
 - BiQuote : SignalR `https://biquote.io/hubs/tick`, `Subscribe(symbols[])`, événement `ReceiveTick`, sans clé API.
 - IA : clé OpenRouter et modèle (défaut `minimax/minimax-m3.1-flash`) dans Réglages › Intelligence artificielle. Aucun agent actuel n'utilise la recherche web du LLM ; si elle était ajoutée, OpenRouter la facture (crédits requis) même avec un modèle `:free`.
+
+## Sources de cotations
+
+- **BiQuote** : Forex, métaux, indices, actions (SignalR + REST). Ses cryptos sont des CFD d'un courtier MetaTrader 5.
+- **Kraken** (par défaut pour les cryptos) : prix du marché réel en dollar (BTC/USD…), flux WebSocket public `wss://ws.kraken.com/v2`, sans compte ni clé, gratuit. Les 40 paires les plus échangées. Un seul abonnement groupé ; REST limité à 1 appel / 1,1 s ; reconnexions espacées de 5 s au moins (limite Kraken : ~150 connexions / 10 min / IP). Si Kraken est injoignable, les cryptos reviennent à BiQuote. Réglage : Réglages › Données › Source des cryptos (effectif au redémarrage).
+- La source de chaque cotation est affichée dans la légende du graphique. Diagnostic : Réglages › Données › Tester la connexion.

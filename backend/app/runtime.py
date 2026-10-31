@@ -14,6 +14,8 @@ from .db import init_engine
 from .llm.openrouter import OpenRouterClient
 from .market.biquote import BiquoteProvider
 from .market.feed import MarketFeed
+from .market.composite import CompositeProvider
+from .market.kraken import KrakenProvider
 from .market.provider import MarketDataProvider
 from .orchestrator import Orchestrator
 from .paper.engine import PaperEngine
@@ -28,7 +30,8 @@ class Runtime:
             init_engine()
         s = get_settings()
         self.bus = EventBus()
-        self.provider = provider or BiquoteProvider()
+        self.provider = provider or CompositeProvider(BiquoteProvider(), KrakenProvider(),
+                                                      use_crypto=settings_store.get("crypto_source") == "kraken")
         self.feed = MarketFeed(self.provider, self.bus, live_s=float(settings_store.get("quote_live_s")),
                                hard_stale_s=float(settings_store.get("quote_hard_stale_s")))
         self.engine = PaperEngine(self.feed, self.bus)
