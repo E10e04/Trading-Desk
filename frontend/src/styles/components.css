@@ -65,7 +65,9 @@
 .mc-head { display: flex; gap: 10px; align-items: center; }
 .mc-head > span:last-child { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .mc-head b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mc-body { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.mc-body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.mc-body svg, .mc-body canvas { max-width: 100%; }
+.mcard { overflow: hidden; }
 .mc-price { display: flex; flex-direction: column; gap: 2px; }
 .mc-price b { font-size: var(--fs-4); letter-spacing: -0.02em; }
 .ch-title { display: flex; flex-direction: column; line-height: 1.15; }
@@ -106,6 +108,7 @@ ul.rows .grow { display: flex; flex-direction: column; line-height: 1.2; } ul.ro
 .grid.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid.c6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .grid.side { grid-template-columns: minmax(0, 1fr) 360px; }
 .kpi { padding: 14px 16px; background: var(--card-glow), var(--panel); }
 .kpi .l { color: var(--text-2); font-size: var(--fs-0); }
@@ -116,6 +119,7 @@ ul.rows .grow { display: flex; flex-direction: column; line-height: 1.2; } ul.ro
 .tbl-wrap { overflow: auto; max-width: 100%; }
 table.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-1); }
 .tbl th { text-align: left; font-weight: 500; color: var(--text-2); padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.tbl th.num, .tbl td.num { text-align: right; }
 .tbl td { padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: middle; }
 .tbl tbody tr.click { cursor: pointer; }
 .tbl tbody tr:hover { background: var(--hover); }
@@ -215,6 +219,7 @@ pre.json { margin: 0; padding: 12px; background: var(--bg); border: 1px solid va
 /* ------------------------------------------------------------ réactif */
 @media (max-width: 1180px) {
   .grid.c4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.c6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid.side { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 960px) {
@@ -232,9 +237,11 @@ pre.json { margin: 0; padding: 12px; background: var(--bg); border: 1px solid va
   .nav a { flex: 0 0 auto; width: 48px; height: 46px; }
   .main { padding: 12px 14px 18px; }
   .grid.c2, .grid.c3, .grid.c4 { grid-template-columns: 1fr; }
-  .grid.c4.keep2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.c4.keep2, .grid.c6.keep2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ticker { display: none; }
   .kv { grid-template-columns: 1fr; gap: 0; } .kv dd { margin-bottom: 8px; }
   .hide-sm { display: none !important; }
   .toasts { bottom: 70px; }
 }
+#tv-attr-logo { display: none !important; }
+@media (max-width: 1360px) { .grid.c6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

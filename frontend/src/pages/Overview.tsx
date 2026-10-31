@@ -13,7 +13,7 @@ import { useLiveEvent, useQuote, useQuotes } from '../lib/live';
 import { CLASS_LABEL, dateTime, ms, price, qty, signed, tone, usd } from '../lib/format';
 
 const STATUS: Record<string, 'ok' | 'warn' | 'err' | 'mute'> = { ok: 'ok', partial: 'warn', skipped: 'mute', error: 'err', executed: 'ok', pending: 'warn', blocked: 'err', rejected: 'err', expired: 'mute', failed: 'err' };
-const HEADLINE = ['BTCUSD', 'ETHUSD', 'EURUSD', 'XAUUSD', 'SOLUSD', 'GBPUSD', 'US500', 'NAS100'];
+const HEADLINE = ['BTCUSD', 'ETHUSD', 'SOLUSD', 'BNBUSD', 'EURUSD', 'XAUUSD', 'GBPUSD', 'US500', 'NAS100'];
 const TAB_ORDER = ['crypto', 'forex', 'metal', 'index', 'equity', 'energy', 'other'];
 
 function MarketCard({ symbol, onOpen }: { symbol: string; onOpen: () => void }) {
@@ -25,7 +25,7 @@ function MarketCard({ symbol, onOpen }: { symbol: string; onOpen: () => void }) 
       <span className="mc-head"><Avatar symbol={symbol} size={34} /><span><b>{symbol}</b><small className="muted">{inst?.description || CLASS_LABEL[inst?.asset_class ?? ''] || ''}</small></span></span>
       <span className="mc-body">
         <span className="mc-price"><b className={q?.freshness === 'live' ? '' : 'muted'}>{q ? price(q.mid, inst?.digits ?? q.digits) : '—'}</b><Change value={q?.chg} /></span>
-        <Spark symbol={symbol} width={92} height={34} />
+        <Spark symbol={symbol} width={132} height={30} />
       </span>
     </button>
   );
@@ -87,7 +87,7 @@ export default function Overview() {
   const have = useMemo(() => new Set(instruments.map((i) => i.symbol)), [instruments]);
   const headline = useMemo(() => {
     const pick = HEADLINE.filter((s) => have.has(s));
-    return (pick.length >= 4 ? pick : [...pick, ...instruments.filter((i) => i.quote?.freshness === 'live' && !pick.includes(i.symbol)).map((i) => i.symbol)]).slice(0, 4);
+    return (pick.length >= 6 ? pick : [...pick, ...instruments.filter((i) => i.quote?.freshness === 'live' && !pick.includes(i.symbol)).map((i) => i.symbol)]).slice(0, 6);
   }, [have, instruments]);
   const chartSymbol = have.has(symbol) ? symbol : headline[0] ?? symbol;
   const classes = useMemo(() => TAB_ORDER.filter((c) => instruments.some((i) => i.asset_class === c)), [instruments]);
@@ -106,7 +106,7 @@ export default function Overview() {
           <span className="muted">Surveillance : {pipe.data.watchlist?.length ?? 0} instrument(s)</span>
         </div>
       )}
-      {headline.length > 0 && <div className="grid c4 keep2">{headline.map((s) => <MarketCard key={s} symbol={s} onOpen={() => { setSymbol(s); nav(`/instrument/${s}`); }} />)}</div>}
+      {headline.length > 0 && <div className="grid c6 keep2">{headline.map((s) => <MarketCard key={s} symbol={s} onOpen={() => { setSymbol(s); nav(`/instrument/${s}`); }} />)}</div>}
       <Async state={pf}>
         {() => (
           <div className="grid side">

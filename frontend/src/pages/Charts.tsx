@@ -13,6 +13,10 @@ export default function Charts() {
   const [tf, setTf] = usePersisted<TF>('tf', '5m');
   const [extra, setExtra] = usePersisted<string[]>('charts.extra', []);
   const [, force] = useState(0);
+  const [vh, setVh] = useState(typeof window === 'undefined' ? 900 : window.innerHeight);
+  useEffect(() => { const f = () => setVh(window.innerHeight); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, []);
+  const n0 = Number(layout);
+  const h = n0 === 4 ? Math.max(240, Math.floor((vh - 330) / 2)) : Math.max(380, vh - 260);
   const n = Number(layout);
   const symbols = [params.symbol?.toUpperCase() ?? current, ...extra].slice(0, n);
   while (symbols.length < n) symbols.push(instruments.find((i) => !symbols.includes(i.symbol))?.symbol ?? current);
@@ -27,7 +31,7 @@ export default function Charts() {
       <div className={`grid ${n === 1 ? '' : 'c2'}`}>
         {symbols.map((s, i) => (
           <Panel key={`${i}`} title={<select className="input" style={{ width: 'auto' }} aria-label={`Instrument du graphique ${i + 1}`} value={s} onChange={(e) => setAt(i, e.target.value)}>{(instruments.some((x) => x.symbol === s) ? instruments : [{ symbol: s }, ...instruments]).slice(0, 2000).map((x) => <option key={x.symbol} value={x.symbol}>{x.symbol}</option>)}</select>}>
-            <Chart symbol={s} tf={tf} height={n === 1 ? 560 : 320} digits={byId(s)?.digits} />
+            <Chart symbol={s} tf={tf} height={h} digits={byId(s)?.digits} />
           </Panel>
         ))}
       </div>

@@ -106,7 +106,7 @@ class PelosiAgent(Agent):
 
     @staticmethod
     async def _download(ctx: AgentContext, url: str) -> bytes:
-        r = await ctx.http.get(url, headers={"User-Agent": "trading-desk/1.0 (paper trading research)"}, timeout=60, follow_redirects=True)
+        r = await ctx.http.get(url, headers={"User-Agent": "monkora/1.0 (paper trading research)"}, timeout=60, follow_redirects=True)
         if r.status_code >= 400:
             raise RuntimeError(f"HTTP {r.status_code}")
         return r.content

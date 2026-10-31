@@ -1,7 +1,7 @@
 {
   "name": "trading-desk-desktop",
   "version": "0.1.0",
-  "description": "Trading Desk — application de bureau (paper trading) : Windows et macOS 11+",
+  "description": "Monkora — application de bureau (paper trading) : Windows et macOS 11+",
   "main": "src/main.js",
   "license": "MIT",
   "private": true,
@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "app.tradingdesk.desktop",
-    "productName": "Trading Desk",
+    "productName": "Monkora",
     "directories": { "output": "release" },
     "files": ["src/**/*", "package.json"],
     "extraResources": [

@@ -7,7 +7,7 @@ export interface UpdateInfo { current: string; latest: Release | null; releases:
 
 declare global {
   interface Window {
-    desktop?: { isDesktop: true; platform: string; installUpdate: (a: Asset) => Promise<unknown>; onUpdateProgress: (cb: (p: number) => void) => () => void };
+    desktop?: { isDesktop: true; platform: string; installUpdate: (a: Asset) => Promise<unknown>; onUpdateProgress: (cb: (p: number) => void) => () => void; notify?: (n: { title: string; body?: string; route?: string; silent?: boolean }) => Promise<boolean>; onNotificationOpen?: (cb: (route: string) => void) => () => void };
   }
 }
 

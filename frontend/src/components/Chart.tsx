@@ -21,7 +21,7 @@ function css(name: string): string {
 }
 function themeOptions() {
   return {
-    layout: { background: { color: css('--panel') }, textColor: css('--text-2'), fontFamily: css('--font'), fontSize: 12 },
+    layout: { attributionLogo: false, background: { color: css('--panel') }, textColor: css('--text-2'), fontFamily: css('--font'), fontSize: 12 },
     grid: { vertLines: { color: css('--grid') }, horzLines: { color: css('--grid') } },
     rightPriceScale: { borderColor: css('--border') },
     timeScale: { borderColor: css('--border') },

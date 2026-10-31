@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from './api';
 import { live, type Quote } from './live';
 
@@ -33,12 +33,21 @@ export function MarketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     load();
     const id = window.setInterval(load, 120000);
-    return () => clearInterval(id);
+    // le serveur annonce « catalogue prêt » : on recharge aussitôt au lieu d'attendre le prochain cycle
+    const off = live.on('catalogue', () => load());
+    return () => { clearInterval(id); off(); };
   }, [load]);
+  // catalogue vide (serveur en cours de démarrage) : nouvel essai toutes les 3 s
+  useEffect(() => {
+    if (instruments.length > 0) return;
+    const id = window.setInterval(load, 3000);
+    return () => clearInterval(id);
+  }, [instruments.length, load]);
   const setSymbol = useCallback((s: string) => {
     setSym(s);
     try { localStorage.setItem('td.symbol', s); } catch { /* ignore */ }
   }, []);
-  const byId = useCallback((s: string) => instruments.find((i) => i.symbol === s), [instruments]);
+  const index = useMemo(() => new Map(instruments.map((i) => [i.symbol, i] as const)), [instruments]);
+  const byId = useCallback((s: string) => index.get(s), [index]);
   return <MarketCtx.Provider value={{ symbol, setSymbol, instruments, loaded, error, byId, reload: load }}>{children}</MarketCtx.Provider>;
 }

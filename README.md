@@ -1,4 +1,4 @@
-# Trading Desk — paper trading multi-agents
+# Monkora — paper trading multi-agents
 
 Application de **paper trading uniquement** (aucun argent réel, aucune route vers un courtier) pilotée par **11 agents**, un par skill du dépôt
 [Jakeschincariol/day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill) (MIT, commit de référence `3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd`).
@@ -126,4 +126,7 @@ MIT. Les skills vendorisés restent © Jake Schincariol (MIT), voir `backend/app
 - Thème sombre `#1e1e1e` (cartes `#262626`) et thème clair ; barre latérale rétractable (bouton en haut du menu, état conservé ; réduite automatiquement sous 960 px).
 - Tableau de bord : cartes de marché avec mini-courbes, graphique, carte portefeuille papier, marchés par classe, plus fortes hausses, dernières exécutions.
 - Alerte sur tous les actifs : activée par défaut ; notification quand un instrument varie d'au moins 3 % depuis l'ouverture du jour (une fois par jour et par sens). Réglages › Surveillance et alertes.
+- Notifications du bureau : chaque alerte et chaque ordre apparaît dans les notifications du système quand la fenêtre est réduite, masquée ou en arrière-plan (application de bureau : Windows et macOS ; navigateur : onglet en arrière-plan, avec autorisation). Fermer la fenêtre de l'application de bureau la garde active dans la zone de notification (icône : Ouvrir / Quitter). Réglages › Notifications du bureau (interrupteur et bouton « Tester »). Non testé sur de vrais Windows et macOS.
+- Le modèle IA choisi dans Réglages › IA s'applique à tous les agents IA (News, Analyste) : les modèles propres à un agent sont effacés au changement, et l'agent affiche « Modèle global ».
+- Monkora (ex-Trading Desk) : le dossier de données existant est réutilisé pour ne rien perdre.
 - Logo : `frontend/public/logo.png` ; icônes de bureau : `desktop/build/icon.ico` et `icon.png`.

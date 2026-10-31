@@ -23,7 +23,7 @@ PROJECT_DIR = BACKEND_DIR.parent
 load_dotenv(PROJECT_DIR / ".env", override=False)
 load_dotenv(BACKEND_DIR / ".env", override=False)
 
-APP_NAME = "Trading Desk"
+APP_NAME = "Monkora"
 APP_VERSION = os.environ.get("APP_VERSION", "").strip() or "0.1.0"  # version de l'application installée (l'appli de bureau la fournit)
 VENDOR_COMMIT = "3d0f4ef6986f4984b7c6bd46f7ff4f87744c3abd"
 VENDOR_REPO = "https://github.com/Jakeschincariol/day-trader-skill"

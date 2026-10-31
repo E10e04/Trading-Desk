@@ -73,7 +73,7 @@ class KrakenProvider(MarketDataProvider):
         self.ws_url = ws_url or self.WS_URL
         self.top_n = top_n
         self._http = httpx.AsyncClient(base_url=(rest_url or self.REST_URL).rstrip("/"), timeout=15, transport=http_transport,
-                                       headers={"User-Agent": "TradingDesk/0.2 (paper-trading)"})
+                                       headers={"User-Agent": "Monkora/0.2 (paper-trading)"})
         self._min_gap = min_rest_gap
         self._rest_lock = asyncio.Lock()
         self._last_rest = 0.0

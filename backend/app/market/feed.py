@@ -67,9 +67,12 @@ class MarketFeed:
                     self.instruments_loaded_at = utcnow()
                     self.catalogue_error = None
                     symbols = sorted(self.instruments)[: self.max_subscribe]
+                    # la liste d'instruments est annoncée tout de suite : l'interface s'affiche sans attendre les prix
+                    await self.bus.publish("catalogue", {"count": len(self.instruments)})
                     await self.provider.subscribe(symbols)
                     await self._prime_quotes(symbols)
                     await self.bus.publish("catalogue", {"count": len(self.instruments)})
+                    self._bg.append(asyncio.create_task(self._warm_headline(), name="feed-warm"))
                     await asyncio.sleep(3600)  # rafraîchissement horaire du catalogue
                     continue
                 self.catalogue_error = "catalogue vide"
@@ -190,6 +193,17 @@ class MarketFeed:
         return None
 
     # ------------------------------------------------------------------ bougies
+    async def _warm_headline(self) -> None:
+        """Précharge l'historique court des cartes de la vue d'ensemble pour que l'accueil s'affiche d'emblée."""
+        for sym in ("BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "EURUSD", "XAUUSD"):
+            if sym in self.instruments:
+                try:
+                    await self._history(sym, "5m", 60)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001  simple préchauffage
+                    log.debug("préchauffage %s: %s", sym, e)
+
     async def get_bars(self, symbol: str, tf: str = "5m", limit: int = 500) -> list[Bar]:
         if tf not in INTERVALS:
             raise ProviderError(f"unité de temps inconnue: {tf}")

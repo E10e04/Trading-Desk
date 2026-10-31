@@ -64,7 +64,7 @@ class OpenRouterClient:
         self.secrets.set("openrouter_api_key", key)
 
     def _client(self, timeout: float) -> httpx.AsyncClient:
-        headers = {"Content-Type": "application/json", "HTTP-Referer": "http://localhost", "X-Title": "Trading Desk"}
+        headers = {"Content-Type": "application/json", "HTTP-Referer": "http://localhost", "X-Title": "Monkora"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return httpx.AsyncClient(base_url=self.base_url, headers=headers, timeout=timeout, transport=self._transport)

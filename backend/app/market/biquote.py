@@ -124,7 +124,7 @@ class BiquoteProvider(MarketDataProvider):
         self.base_url = (base_url or s.biquote_base_url).rstrip("/")
         self.hub_path = hub_path or s.biquote_hub_path
         key = api_key if api_key is not None else s.biquote_api_key
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; TradingDesk/0.2; paper-trading)"}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; Monkora/0.2; paper-trading)"}
         if key:  # facultatif : les endpoints publics de lecture n'en demandent pas
             headers["X-API-Key"] = key
         self._headers = headers

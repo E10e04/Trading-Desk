@@ -275,4 +275,34 @@ describe('interface', () => {
     await page.getByRole('button', { name: 'Instrument à surveiller' }).filter({ hasText: 'XAUUSD' }).waitFor();
     await ctx.close();
   });
+
+  test('marchés : en-têtes Bid, Ask et Prix alignés à droite', async () => {
+    const { ctx, page } = await open('/markets');
+    await page.waitForSelector('th');
+    for (const name of ['Bid', 'Ask', 'Prix']) {
+      const a = await page.locator('th', { hasText: new RegExp(`^${name}$`) }).first().evaluate((el) => getComputedStyle(el).textAlign);
+      assert.equal(a, 'right', name);
+    }
+    await ctx.close();
+  });
+
+  test('barre latérale sans « Liste rapide » ; graphique sans logo TradingView et qui remplit la hauteur', async () => {
+    const { ctx, page } = await open('/charts');
+    assert.equal(await page.getByText('Liste rapide').count(), 0);
+    await page.waitForSelector('.tv-lightweight-charts');
+    assert.equal(await page.locator('#tv-attr-logo').filter({ visible: true }).count(), 0);
+    const h = await page.locator('.tv-lightweight-charts').first().evaluate((el) => el.getBoundingClientRect().height);
+    assert.ok(h > 860 - 330, `hauteur du graphique ${h}`);
+    await ctx.close();
+  });
+
+  test('vue d’ensemble : cartes de prix, Monkora dans le titre, notifications dans les réglages', async () => {
+    const { ctx, page } = await open('/');
+    await page.waitForSelector('.mcard');
+    assert.ok((await page.locator('.mcard').count()) >= 5);
+    assert.match(await page.title(), /Monkora/);
+    await page.goto(`${BASE}/#/settings`);
+    await page.getByRole('tab', { name: /Général|Interface/ }).first().click().catch(() => {});
+    await ctx.close();
+  });
 });

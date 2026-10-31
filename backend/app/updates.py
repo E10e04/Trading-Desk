@@ -59,7 +59,7 @@ async def check(repo: str | None = None, current: str = APP_VERSION, force: bool
     if not force and _cache["data"] is not None and _cache["repo"] == repo and time.monotonic() - _cache["at"] < _TTL:
         return {**_cache["data"], "current": current, "update_available": bool(_cache["data"]["latest"] and _cache["data"]["latest"]["version"] != current)}
     own = client is None
-    c = client or httpx.AsyncClient(timeout=10, headers={"Accept": "application/vnd.github+json", "User-Agent": "trading-desk-update-check"})
+    c = client or httpx.AsyncClient(timeout=10, headers={"Accept": "application/vnd.github+json", "User-Agent": "monkora-update-check"})
     try:
         r = await c.get(f"https://api.github.com/repos/{repo}/releases", params={"per_page": 30})
         if r.status_code == 404:

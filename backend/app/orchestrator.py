@@ -136,6 +136,15 @@ class Orchestrator:
                 row.interval_s = interval_s
         return self.config(agent_id)
 
+    def clear_model_overrides(self) -> int:
+        """Les agents IA (News, Analyste) héritent à nouveau du modèle global : à appeler quand il change."""
+        n = 0
+        with session_scope() as s:
+            for row in s.query(AgentConfig).filter(AgentConfig.model.isnot(None)).all():
+                row.model = None
+                n += 1
+        return n
+
     def reset_config(self, agent_id: str) -> dict[str, Any]:
         with session_scope() as s:
             row = s.get(AgentConfig, agent_id)

@@ -32,7 +32,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 /* ---------------------------------------------------------------- structure */
 export function Page({ title, subtitle, actions, children }: { title: string; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   useEffect(() => {
-    document.title = `${title} — Trading Desk`;
+    document.title = `${title} — Monkora`;
   }, [title]);
   return (
     <>

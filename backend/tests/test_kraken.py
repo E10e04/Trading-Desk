@@ -170,3 +170,19 @@ async def test_composite_garde_les_cryptos_de_biquote_si_kraken_est_injoignable(
     insts = {i.symbol: i for i in await c.list_instruments()}
     assert insts["BTCUSD"].exchange != "Kraken" and c.crypto_error
     await c.aclose()
+
+
+async def test_composite_garde_les_cryptos_de_biquote_absentes_de_kraken():
+    from app.market.provider import Instrument
+    k = await mk()
+    b = BiquoteProvider(base_url="https://biquote.test", http_transport=_mock_rest())
+    orig = b.list_instruments
+
+    async def with_bnb():
+        rows = await orig()
+        return rows + [Instrument(symbol="BNBUSD", description="BNB", asset_class="crypto", digits=2)]
+    b.list_instruments = with_bnb
+    c = CompositeProvider(b, k)
+    insts = {i.symbol: i for i in await c.list_instruments()}
+    assert insts["BNBUSD"].exchange != "Kraken" and insts["BTCUSD"].exchange == "Kraken"
+    await c.aclose()

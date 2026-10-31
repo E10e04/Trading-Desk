@@ -211,3 +211,13 @@ def test_update_endpoint_ne_plante_jamais_hors_ligne(client, monkeypatch):
     monkeypatch.setattr(updates, "check", boom)
     j = client.get("/api/update/check").json()
     assert j["update_available"] is False and "vérification impossible" in j["error"]
+
+
+def test_changer_le_modele_global_remet_news_et_analyste_sur_le_modele_global(client):
+    client.put("/api/agents/news/config", json={"model": "vieux/modele"})
+    client.put("/api/agents/analyst/config", json={"model": "autre/modele"})
+    r = client.put("/api/settings", json={"llm_model": "nouveau/modele"}).json()
+    assert r["agent_overrides_cleared"] == 2
+    assert client.get("/api/agents/news").json()["config"]["model"] is None
+    assert client.get("/api/agents/analyst").json()["config"]["model"] is None
+    assert client.put("/api/settings", json={"llm_model": "nouveau/modele"}).json().get("agent_overrides_cleared") is None

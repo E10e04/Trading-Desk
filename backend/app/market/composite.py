@@ -1,6 +1,7 @@
 """Fournisseur composite : BiQuote pour tout, Kraken pour les cryptos (prix du marché réel plutôt que CFD de courtier)."""
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 from typing import Any
@@ -28,19 +29,22 @@ class CompositeProvider(MarketDataProvider):
         return [s for s in symbols if s.upper() not in self._crypto_syms], c
 
     async def list_instruments(self) -> list[Instrument]:
-        base = await self.primary.list_instruments()
         if not self.use_crypto:
-            return base
-        try:
-            crypto = await self.crypto.list_instruments()
-            self.crypto_error = None
-        except Exception as e:  # noqa: BLE001  Kraken injoignable : on garde les cryptos de BiQuote
-            self.crypto_error = f"{type(e).__name__}: {str(e)[:160]}"
+            return await self.primary.list_instruments()
+        # les deux catalogues sont demandés en parallèle (le démarrage ne cumule plus leurs délais)
+        base, crypto = await asyncio.gather(self.primary.list_instruments(), self.crypto.list_instruments(),
+                                            return_exceptions=True)
+        if isinstance(base, BaseException):
+            raise base
+        if isinstance(crypto, BaseException):  # Kraken injoignable : on garde les cryptos de BiQuote
+            self.crypto_error = f"{type(crypto).__name__}: {str(crypto)[:160]}"
             log.warning("Kraken indisponible (%s) : cryptos servies par BiQuote", self.crypto_error)
             self._crypto_syms = set()
             return base
+        self.crypto_error = None
         self._crypto_syms = {i.symbol for i in crypto}
-        return [i for i in base if i.asset_class != "crypto"] + crypto
+        # on garde les cryptos de BiQuote que Kraken ne cote pas (ex. BNB)
+        return [i for i in base if i.asset_class != "crypto" or i.symbol not in self._crypto_syms] + crypto
 
     async def latest(self, symbols: list[str]) -> dict[str, Quote]:
         other, crypto = self._split(symbols)

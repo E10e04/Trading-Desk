@@ -1,3 +1,4 @@
+import { ModelSelect } from './Settings';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Async, Banner, DataTable, Empty, ErrorState, Field, JsonBlock, KV, Modal, Page, Panel, Pill, Switch, Tabs, useToast } from '../components/ui';
@@ -68,7 +69,7 @@ export default function AgentDetail() {
                 <div className="form-grid">
                   <Field label="Activé" hint="Un agent désactivé n’est plus déclenché automatiquement ; une exécution manuelle reste possible.">{() => <Switch checked={enabled} onChange={setEnabled} label="Activé" />}</Field>
                   <Field label="Intervalle automatique (s)" hint={d.default_interval_s ? `Par défaut ${d.default_interval_s} s` : 'Déclenché par événement'}>{(i) => <input id={i} className="input" inputMode="numeric" value={interval} onChange={(e) => setInterval_(e.target.value)} />}</Field>
-                  {d.uses_llm && <Field label="Modèle OpenRouter" hint={`Vide = modèle par défaut (${models.data?.default ?? 'minimax/minimax-m3.1-flash'})`}>{(i) => <><input id={i} className="input" list="models" value={model} onChange={(e) => setModel(e.target.value)} placeholder="modèle par défaut" /><datalist id="models">{(models.data?.items ?? []).slice(0, 800).map((m) => <option key={m.id} value={m.id} />)}</datalist></>}</Field>}
+                  {d.uses_llm && <Field label="Modèle OpenRouter" hint="Par défaut, l’agent suit le modèle choisi dans Réglages › IA : il change tout seul avec lui.">{(i) => <ModelSelect id={i} value={model} items={models.data?.items ?? []} inherit={models.data?.default ?? 'minimax/minimax-m3.1-flash'} onChange={setModel} />}</Field>}
                 </div>
                 {d.uses_llm && models.error && <Banner kind="warn">Catalogue de modèles indisponible ({models.error}). Vous pouvez saisir l’identifiant du modèle à la main.</Banner>}
                 {Object.keys(d.default_params).length ? (

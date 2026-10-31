@@ -66,9 +66,13 @@ def get_settings_():
 
 
 @router.put("/settings")
-def put_settings(values: dict[str, Any]):
+def put_settings(values: dict[str, Any], rt: Runtime = Depends(runtime)):
     try:
-        return {"values": settings_store.update(values)}
+        changed = "llm_model" in values and values["llm_model"] != settings_store.get("llm_model")
+        out = {"values": settings_store.update(values)}
+        if changed:  # le modèle choisi s'applique aussitôt à News et Analyste, sans modification manuelle
+            out["agent_overrides_cleared"] = rt.orch.clear_model_overrides()
+        return out
     except (KeyError, TypeError) as e:
         raise HTTPException(400, str(e)) from e
 

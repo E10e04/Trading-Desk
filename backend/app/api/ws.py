@@ -12,7 +12,7 @@ from .deps import check_token
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-BROADCAST = {"order", "fill", "agent_run", "proposal", "notification", "feed_status"}
+BROADCAST = {"catalogue", "order", "fill", "agent_run", "proposal", "notification", "feed_status"}
 MAX_SUBS = 400
 
 

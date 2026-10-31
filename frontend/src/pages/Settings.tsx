@@ -8,6 +8,7 @@ import { InstrumentPicker } from '../components/InstrumentPicker';
 import { AGENT_LABEL } from '../lib/agents';
 import { useMarket } from '../lib/market';
 import { dateTime, ms, usd } from '../lib/format';
+import { desktopNotifEnabled, requestWebNotifPermission, sendSystemNotification, setDesktopNotifEnabled, webNotifPermission } from '../lib/desktopNotify';
 
 type Tab = 'exec' | 'data' | 'ai' | 'watch' | 'misc';
 type Vals = Record<string, any>;
@@ -106,15 +107,16 @@ function Data({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void
 
 const BUILTIN_MODEL = 'minimax/minimax-m3.1-flash';
 
-function ModelSelect({ id, value, items, onChange }: { id: string; value: string; items: { id: string; name?: string; free?: boolean }[]; onChange: (m: string) => void }) {
+export function ModelSelect({ id, value, items, onChange, inherit }: { id: string; value: string; items: { id: string; name?: string; free?: boolean }[]; onChange: (m: string) => void; inherit?: string }) {
   const [custom, setCustom] = useState(false);
-  const known = items.some((m) => m.id === value) || [BUILTIN_MODEL, `${BUILTIN_MODEL}:free`].includes(value);
+  const known = (inherit !== undefined && value === '') || items.some((m) => m.id === value) || [BUILTIN_MODEL, `${BUILTIN_MODEL}:free`].includes(value);
   const free = items.filter((m) => m.free);
   const paid = items.filter((m) => !m.free);
   const fallback = !items.length;
   return (
     <div className="stack" style={{ gap: 6 }}>
       <select id={id} className="input" value={custom || !known ? '__custom' : value} onChange={(e) => { if (e.target.value === '__custom') setCustom(true); else { setCustom(false); onChange(e.target.value); } }}>
+        {inherit !== undefined && <option value="">Modèle global ({inherit})</option>}
         {fallback ? <><option value={BUILTIN_MODEL}>MiniMax M3.1 Flash ({BUILTIN_MODEL})</option><option value={`${BUILTIN_MODEL}:free`}>MiniMax M3.1 Flash gratuit ({BUILTIN_MODEL}:free)</option></> : <>
           {!!free.length && <optgroup label="Gratuits">{free.map((m) => <option key={m.id} value={m.id}>{m.name && m.name !== m.id ? `${m.name} — ${m.id}` : m.id}</option>)}</optgroup>}
           <optgroup label="Payants">{paid.map((m) => <option key={m.id} value={m.id}>{m.name && m.name !== m.id ? `${m.name} — ${m.id}` : m.id}</option>)}</optgroup></>}
@@ -288,9 +290,38 @@ function Misc() {
           <div className="row"><input className="input" style={{ maxWidth: 360 }} aria-label="User-Agent SEC" placeholder="Prénom Nom nom@exemple.com" value={ua} onChange={(e) => setUa(e.target.value)} /><button className="btn primary" disabled={!ua.trim()} onClick={saveUa}>Enregistrer</button></div>
         </div>
       </Panel>
+      <SystemNotifications />
       <UpdatesPanel />
-      <Panel title="À propos"><Async state={meta}>{(m) => <KV rows={[['Application', `${m.app} ${m.version}`], ['Mode', 'Paper trading uniquement'], ['Source des marchés', m.provider], ['Modèle IA par défaut', m.default_model], ['Skills', `${m.provenance.repo} @ ${String(m.provenance.commit).slice(0, 7)}`], ['Licence des skills', m.provenance.license]]} />}</Async></Panel>
+      <Panel title="À propos"><Async state={meta}>{(m) => <KV rows={[['Application', `${m.app} ${m.version}`], ['Mode', 'Paper trading uniquement'], ['Source des marchés', m.provider], ['Modèle IA par défaut', m.default_model], ['Skills', `${m.provenance.repo} @ ${String(m.provenance.commit).slice(0, 7)}`], ['Licence des skills', m.provenance.license], ['Graphiques', 'Lightweight Charts™, © TradingView, Inc. (licence Apache 2.0)']]} />}</Async></Panel>
     </div>
+  );
+}
+
+function SystemNotifications() {
+  const toast = useToast();
+  const [on, setOn] = useState(desktopNotifEnabled());
+  const [perm, setPerm] = useState(webNotifPermission());
+  const desk = !!window.desktop?.notify;
+  const test = async () => {
+    if (!desk && perm !== 'granted') {
+      setPerm(await requestWebNotifPermission());
+      if (webNotifPermission() !== 'granted') { toast('warning', 'Notifications refusées', 'Autorisez-les dans les réglages de votre navigateur pour cette page.'); return; }
+    }
+    const ok = await sendSystemNotification({ level: 'success', title: 'Monkora', body: 'Les notifications du bureau fonctionnent.' }, { force: true });
+    if (!ok) toast('warning', 'Notification non affichée', 'Vérifiez que les notifications du système ne sont pas coupées (mode Ne pas déranger, Assistant de concentration).');
+  };
+  return (
+    <Panel title="Notifications du bureau">
+      <Row title="Notifier sur le bureau" hint={desk ? 'Quand la fenêtre est réduite, masquée ou en arrière-plan, chaque alerte et chaque ordre apparaît dans les notifications de votre système. Fermer la fenêtre garde Monkora actif dans la zone de notification.' : 'Quand cet onglet est en arrière-plan, les alertes s’affichent dans les notifications de votre système. Pour les recevoir application fermée, utilisez l’application de bureau.'}>
+        <Switch checked={on} onChange={(v) => { setOn(v); setDesktopNotifEnabled(v); }} label="Notifications du bureau" />
+      </Row>
+      <div className="row" style={{ paddingTop: 10 }}>
+        {!desk && perm === 'default' && <button className="btn" onClick={async () => setPerm(await requestWebNotifPermission())}>Autoriser les notifications</button>}
+        {!desk && perm === 'denied' && <Pill kind="warn">Refusées par le navigateur</Pill>}
+        {!desk && perm === 'unsupported' && <Pill kind="mute">Non prises en charge par ce navigateur</Pill>}
+        <button className="btn" onClick={test}>Tester</button>
+      </div>
+    </Panel>
   );
 }
 

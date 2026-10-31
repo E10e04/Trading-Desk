@@ -29,7 +29,7 @@ function download(url, dest, { onProgress, sha256, insecureForTests = false, max
       const target = new URL(u);
       if (!okRedirect(target, insecureForTests) && left !== maxRedirects) return reject(new Error(`redirection refusée vers ${target.hostname}`));
       const lib = target.protocol === 'http:' ? http : https;
-      lib.get(target, { headers: { 'User-Agent': 'trading-desk-updater' } }, (res) => {
+      lib.get(target, { headers: { 'User-Agent': 'monkora-updater' } }, (res) => {
         if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
           res.resume();
           if (left <= 0) return reject(new Error('trop de redirections'));

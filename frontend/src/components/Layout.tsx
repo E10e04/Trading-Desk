@@ -9,6 +9,7 @@ import { Avatar, Change } from './Visual';
 import { live, useConnState, useLiveEvent, useQuotes } from '../lib/live';
 import { useMarket } from '../lib/market';
 import { price } from '../lib/format';
+import { createCoalescer, sendSystemNotification } from '../lib/desktopNotify';
 import { useTheme, type ThemeMode } from '../lib/theme';
 import { useUpdate } from '../lib/update';
 import { UpdateDialog } from './UpdateDialog';
@@ -80,35 +81,6 @@ function Ticker() {
   );
 }
 
-function QuickWatch() {
-  const { instruments, setSymbol } = useMarket();
-  const wl = useApi<{ items: { symbol: string }[] }>('/api/watchlist', 30000);
-  const syms = useMemo(() => {
-    const have = new Set(instruments.map((i) => i.symbol));
-    const mine = (wl.data?.items ?? []).map((w) => w.symbol).filter((x) => have.has(x));
-    return (mine.length ? mine : PREFERRED.filter((x) => have.has(x))).slice(0, 4);
-  }, [instruments, wl.data]);
-  const quotes = useQuotes(syms);
-  const nav = useNavigate();
-  if (!syms.length) return null;
-  return (
-    <div className="rail-block">
-      <div className="nav-group">Liste rapide</div>
-      {syms.map((s) => {
-        const q = quotes.get(s);
-        return (
-          <button key={s} className="qw" onClick={() => { setSymbol(s); nav(`/instrument/${s}`); }}>
-            <Avatar symbol={s} size={24} />
-            <b>{s}</b>
-            <span className="num">{q ? price(q.mid, q.digits) : '—'}</span>
-            <Change value={q?.chg} />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function Layout() {
   const [collapsedPref, setCollapsed] = usePersisted<boolean>('rail.collapsed', false);
   const [narrow, setNarrow] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 960px)').matches);
@@ -129,8 +101,13 @@ export function Layout() {
   const upd = useUpdate();
 
   useEffect(() => live.start(), []);
+  const nav = useNavigate();
+  const coalescer = useMemo(() => createCoalescer((n) => { void sendSystemNotification(n); }), []);
+  useEffect(() => () => coalescer.dispose(), [coalescer]);
+  useEffect(() => window.desktop?.onNotificationOpen?.((route) => nav(route)), [nav]);
   useLiveEvent('notification', (n: { level: string; title: string; body?: string }) => {
     unread.reload();
+    coalescer.push(n);
     if (n.level === 'error' || n.level === 'warning' || n.level === 'success') toast(n.level as 'error', n.title, n.body);
   });
 
@@ -150,7 +127,7 @@ export function Layout() {
         <div className="brand">
           <Logo />
           <div className="brand-text">
-            Trading Desk
+            Monkora
             <small>Paper trading</small>
           </div>
           <button className="rail-toggle" onClick={() => setCollapsed(!collapsed)} aria-pressed={collapsed} aria-label={collapsed ? 'Agrandir la barre latérale' : 'Réduire la barre latérale'} title={collapsed ? 'Agrandir le menu' : 'Réduire le menu'}>
@@ -171,7 +148,6 @@ export function Layout() {
             </div>
           ))}
         </nav>
-        <QuickWatch />
         <Link to="/agents" className="rail-card" title="Agents IA">
           <span className="ico">{Icons.bolt}</span>
           <span className="rc-text">
