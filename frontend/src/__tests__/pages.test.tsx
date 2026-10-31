@@ -92,7 +92,7 @@ describe('pages', () => {
       '/api/settings': { values: {}, defaults: {} },
       '/api/watchlist/reasons': { items: [{ code: 'idea', label: 'Idée personnelle', source: 'manual', source_label: 'Manuel' }, { code: 'news', label: 'Actualité', source: 'news', source_label: 'Agent News' }] },
       '/api/watchlist': { items: [] },
-      '/api/instruments': { items: [{ symbol: 'EURUSD', name: 'Euro / Dollar', asset_class: 'forex' }] },
+      '/api/instruments': { items: [{ symbol: 'EURUSD', description: 'Euro / Dollar', asset_class: 'forex', digits: 5, quote: null }] },
     });
     const { default: Settings } = await import('../pages/Settings');
     const { MarketProvider } = await import('../lib/market');
@@ -102,6 +102,13 @@ describe('pages', () => {
     expect(reason.tagName).toBe('SELECT');
     fireEvent.change(reason, { target: { value: 'news' } });
     expect(await screen.findByText(/Agent News/)).toBeTruthy();
+    // recherche dans la liste d'instruments
+    fireEvent.click(screen.getByLabelText('Instrument à surveiller'));
+    const search = await screen.findByLabelText('Rechercher : Instrument à surveiller');
+    fireEvent.change(search, { target: { value: 'euro' } });
+    expect(await screen.findByRole('option', { name: /EURUSD/ })).toBeTruthy();
+    fireEvent.change(search, { target: { value: 'zzzz' } });
+    expect(await screen.findByText('Aucun résultat')).toBeTruthy();
     expect(calls.some((c) => c.init?.method === 'POST')).toBe(false);
   });
 

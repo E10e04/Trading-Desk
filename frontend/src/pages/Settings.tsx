@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Async, Banner, Confirm, DataTable, Empty, Field, KV, Page, Panel, Pill, Segmented, Switch, Tabs, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { useTheme } from '../lib/theme';
 import { useUpdate } from '../lib/update';
+import { InstrumentPicker } from '../components/InstrumentPicker';
 import { AGENT_LABEL } from '../lib/agents';
 import { useMarket } from '../lib/market';
-import { CLASS_LABEL, dateTime, ms, usd } from '../lib/format';
+import { dateTime, ms, usd } from '../lib/format';
 
 type Tab = 'exec' | 'data' | 'ai' | 'watch' | 'misc';
 type Vals = Record<string, any>;
@@ -217,11 +218,6 @@ function Watch({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => voi
   const [ruleSym, setRuleSym] = useState('');
   const list = reasons.data?.items ?? [];
   const picked = list.find((r) => r.code === reason);
-  const groups = useMemo(() => {
-    const g = new Map<string, typeof instruments>();
-    for (const i of instruments) g.set(i.asset_class, [...(g.get(i.asset_class) ?? []), i]);
-    return [...g.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [instruments]);
   const originLabel = (src: string) => list.find((r) => r.source === src)?.source_label ?? src;
   const addW = async () => { try { await api('/api/watchlist', { body: { symbol: sym, reason_code: reason } }); setSym(''); setReason(''); wl.reload(); toast('success', 'Instrument ajouté à la surveillance'); } catch (e) { toast('error', 'Ajout impossible', (e as Error).message); } };
   const addR = async () => {
@@ -239,10 +235,7 @@ function Watch({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => voi
       <Panel title="Liste de surveillance" flush>
         <div className="stack" style={{ padding: 12, gap: 8 }}>
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <select className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Instrument à surveiller" value={sym} onChange={(e) => setSym(e.target.value)}>
-              <option value="">Choisir un instrument…</option>
-              {groups.map(([cls, items]) => <optgroup key={cls} label={CLASS_LABEL[cls] ?? cls}>{items.map((i) => <option key={i.symbol} value={i.symbol}>{i.symbol}{i.description ? ` — ${i.description}` : ''}</option>)}</optgroup>)}
-            </select>
+            <div style={{ flex: '1 1 220px', minWidth: 0 }}><InstrumentPicker instruments={instruments} value={sym} onChange={setSym} label="Instrument à surveiller" /></div>
             <select className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Raison de la surveillance" value={reason} onChange={(e) => setReason(e.target.value)}>
               <option value="">Choisir une raison…</option>
               {list.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}

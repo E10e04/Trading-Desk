@@ -263,4 +263,16 @@ describe('interface', () => {
     assert.equal(await sw.isChecked(), true);
     await ctx.close();
   });
+
+  test('surveillance : recherche d’un instrument dans la liste déroulante', async () => {
+    const { ctx, page } = await open('/settings');
+    await page.getByRole('tab', { name: 'Surveillance et alertes' }).click();
+    await page.getByLabel('Instrument à surveiller').click();
+    const search = page.getByLabel('Rechercher : Instrument à surveiller');
+    await search.fill('xau');
+    await page.waitForFunction(() => document.querySelectorAll('[role=option]').length === 1);
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Instrument à surveiller' }).filter({ hasText: 'XAUUSD' }).waitFor();
+    await ctx.close();
+  });
 });

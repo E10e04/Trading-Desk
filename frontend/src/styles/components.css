@@ -207,6 +207,11 @@ pre.json { margin: 0; padding: 12px; background: var(--bg); border: 1px solid va
 .bar { height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--accent); }
 
+.picker-btn { display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; width: 100%; }
+.picker-btn .picker-d { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker-btn .si { margin-left: auto; display: inline-flex; width: 16px; height: 16px; color: var(--text-2); flex: none; }
+.picker-menu { width: min(460px, 92vw); }
+
 /* ------------------------------------------------------------ réactif */
 @media (max-width: 1180px) {
   .grid.c4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
