@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Async, Banner, Confirm, DataTable, Empty, Field, KV, Page, Panel, Pill, Segmented, Switch, Tabs, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { useTheme } from '../lib/theme';
+import { useUpdate } from '../lib/update';
 import { AGENT_LABEL } from '../lib/agents';
-import { dateTime, ms, usd } from '../lib/format';
+import { useMarket } from '../lib/market';
+import { CLASS_LABEL, dateTime, ms, usd } from '../lib/format';
 
 type Tab = 'exec' | 'data' | 'ai' | 'watch' | 'misc';
 type Vals = Record<string, any>;
@@ -20,7 +22,7 @@ function useSettings() {
 function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return <div className="row between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}><div style={{ maxWidth: '60ch' }}><b>{title}</b>{hint && <div className="muted">{hint}</div>}</div>{children}</div>;
 }
-function NumberSetting({ k, vals, save, nullable }: { k: string; vals: Vals; save: (p: Vals) => void; nullable?: boolean }) {
+function NumberSetting({ k, vals, save, nullable }: { k: string; vals: Vals; save: (p: Vals, ok?: string) => void; nullable?: boolean }) {
   const [v, setV] = useState(vals[k] === null || vals[k] === undefined ? '' : String(vals[k]));
   useEffect(() => setV(vals[k] === null || vals[k] === undefined ? '' : String(vals[k])), [vals[k]]); // eslint-disable-line react-hooks/exhaustive-deps
   const commit = () => {
@@ -53,7 +55,7 @@ export default function Settings() {
   );
 }
 
-function Exec({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
+function Exec({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }) {
   const [kill, setKill] = useState(false);
   return (
     <Panel title="Exécution (paper trading uniquement)">
@@ -69,7 +71,7 @@ function Exec({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
   );
 }
 
-function Data({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
+function Data({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }) {
   return (
     <Panel title="Données de marché">
       <Row title="Âge maximal d’une cotation pour exécuter (s)" hint="Un ordre n’est jamais exécuté sur une cotation plus vieille."><NumberSetting k="max_quote_age_s" vals={vals} save={save} /></Row>
@@ -82,7 +84,28 @@ function Data({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
   );
 }
 
-function AI({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
+const BUILTIN_MODEL = 'minimax/minimax-m3.1-flash';
+
+function ModelSelect({ id, value, items, onChange }: { id: string; value: string; items: { id: string; name?: string; free?: boolean }[]; onChange: (m: string) => void }) {
+  const [custom, setCustom] = useState(false);
+  const known = items.some((m) => m.id === value) || [BUILTIN_MODEL, `${BUILTIN_MODEL}:free`].includes(value);
+  const free = items.filter((m) => m.free);
+  const paid = items.filter((m) => !m.free);
+  const fallback = !items.length;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <select id={id} className="input" value={custom || !known ? '__custom' : value} onChange={(e) => { if (e.target.value === '__custom') setCustom(true); else { setCustom(false); onChange(e.target.value); } }}>
+        {fallback ? <><option value={BUILTIN_MODEL}>MiniMax M3.1 Flash ({BUILTIN_MODEL})</option><option value={`${BUILTIN_MODEL}:free`}>MiniMax M3.1 Flash gratuit ({BUILTIN_MODEL}:free)</option></> : <>
+          {!!free.length && <optgroup label="Gratuits">{free.map((m) => <option key={m.id} value={m.id}>{m.name && m.name !== m.id ? `${m.name} — ${m.id}` : m.id}</option>)}</optgroup>}
+          <optgroup label="Payants">{paid.map((m) => <option key={m.id} value={m.id}>{m.name && m.name !== m.id ? `${m.name} — ${m.id}` : m.id}</option>)}</optgroup></>}
+        <option value="__custom">Autre… (saisir l’identifiant)</option>
+      </select>
+      {(custom || !known) && <input className="input" aria-label="Identifiant du modèle" placeholder="fournisseur/modele" defaultValue={known ? '' : value} onBlur={(e) => e.target.value.trim() && onChange(e.target.value.trim())} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).value.trim() && onChange((e.target as HTMLInputElement).value.trim())} />}
+    </div>
+  );
+}
+
+function AI({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }) {
   const toast = useToast();
   const status = useApi<any>('/api/llm/status', 15000);
   const stats = useApi<any>('/api/llm/stats', 20000);
@@ -91,10 +114,12 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
   const [key, setKey] = useState('');
   const [test, setTest] = useState<any>(null);
   const [testing, setTesting] = useState(false);
-  const [model, setModel] = useState('');
+  const [model, setModel] = useState<string | null>(null);
   const [del, setDel] = useState(false);
+  const current = model ?? (vals.llm_model as string) ?? BUILTIN_MODEL;
+  const freeSel = current.endsWith(':free') || !!models.data?.items.find((m) => m.id === current)?.free;
   const setKeyNow = async () => { try { await api('/api/llm/key', { method: 'PUT', body: { key } }); setKey(''); toast('success', 'Clé enregistrée sur le serveur'); status.reload(); models.reload(); } catch (e) { toast('error', 'Clé refusée', (e as Error).message); } };
-  const runTest = async () => { setTesting(true); try { setTest(await api('/api/llm/test', { body: { model: model || null } })); stats.reload(); } catch (e) { setTest({ ok: false, error: (e as Error).message }); } finally { setTesting(false); } };
+  const runTest = async () => { setTesting(true); try { setTest(await api('/api/llm/test', { body: { model: current } })); stats.reload(); } catch (e) { setTest({ ok: false, error: (e as Error).message }); } finally { setTesting(false); } };
   const assign = async (id: string, m: string) => { try { await api(`/api/agents/${id}/config`, { method: 'PUT', body: { model: m || null, clear_model: !m } }); agents.reload(); toast('success', `Modèle de ${AGENT_LABEL[id] ?? id} enregistré`); } catch (e) { toast('error', 'Échec', (e as Error).message); } };
   const s = status.data;
   const u = stats.data?.today;
@@ -108,12 +133,17 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals) => void }) {
         </div>
       </Panel>
       <div className="grid c2">
-        <Panel title="Modèle et test de connexion" actions={<button className="btn" onClick={runTest} disabled={testing}>{testing ? 'Test…' : 'Tester la connexion'}</button>}>
+        <Panel title="Modèle d’IA" actions={<button className="btn" onClick={runTest} disabled={testing}>{testing ? 'Test…' : 'Tester la connexion'}</button>}>
           <div className="stack">
-            <Field label="Modèle à tester" hint={`Modèle par défaut : ${models.data?.default ?? s?.default_model ?? 'minimax/minimax-m3.1-flash'}`}>{(id) => <><input id={id} className="input" list="all-models" value={model} onChange={(e) => setModel(e.target.value)} placeholder={models.data?.default ?? s?.default_model ?? 'modèle par défaut'} /><datalist id="all-models">{(models.data?.items ?? []).slice(0, 1000).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</datalist></>}</Field>
-            {models.error && <Banner kind="warn">Catalogue indisponible : {models.error}</Banner>}
-            {test && <Banner kind={test.ok ? 'info' : 'err'}>{test.ok ? <span>Connexion réussie avec <b>{test.model}</b> en {ms(test.latency_ms)}.</span> : <span>Échec : {test.error}</span>}</Banner>}
+            <Field label="Modèle utilisé par défaut" hint={`Par défaut : ${BUILTIN_MODEL} (MiniMax M3.1 Flash). Chaque agent peut avoir son propre modèle (tableau plus bas).`}>{(id) => (
+              <ModelSelect id={id} value={current} items={models.data?.items ?? []} onChange={(m) => { setModel(m); void save({ llm_model: m }, 'Modèle enregistré'); }} />
+            )}</Field>
+            <div className="row"><button className="btn sm" onClick={() => { setModel(BUILTIN_MODEL); void save({ llm_model: BUILTIN_MODEL }, 'Modèle par défaut rétabli'); }} disabled={current === BUILTIN_MODEL}>Rétablir MiniMax M3.1 Flash</button><button className="btn sm" onClick={() => models.reload()}>Actualiser la liste</button></div>
+            {models.error && <Banner kind="warn">Liste des modèles indisponible ({models.error}). Vous pouvez saisir l’identifiant à la main dans la liste ci-dessus (option « Autre… »).</Banner>}
+            {freeSel && <Banner kind="info">Modèle gratuit : quotas journaliers et par minute limités ; OpenRouter peut exiger de cocher l’utilisation des données dans <a href="https://openrouter.ai/settings/privacy" target="_blank" rel="noreferrer">vos paramètres de confidentialité</a>.</Banner>}
+            {test && <Banner kind={test.ok ? 'info' : 'err'}>{test.ok ? <span>Connexion réussie avec <b>{test.model}</b> en {ms(test.latency_ms)}.{test.free_tier ? ' Compte gratuit : certaines limites s’appliquent.' : ''}</span> : <span><b>Échec du test.</b> {test.error}</span>}</Banner>}
             <span className="muted">{models.data ? `${models.data.items.length} modèles disponibles` : ''}</span>
+            <p className="muted">Recherche web : aucun agent n’en a besoin aujourd’hui (News et Analyst résument des données déjà récupérées). Si vous en ajoutez, OpenRouter facture la recherche (≈ 0,007 $ la requête, Exa) <b>même avec un modèle gratuit</b> : il faut donc des crédits.</p>
           </div>
         </Panel>
         <Panel title="Consommation du jour">
@@ -153,28 +183,55 @@ function ModelCell({ value, placeholder, items, onSave }: { value: string; place
   return <div className="row"><input className="input" style={{ minWidth: 240 }} list="agent-models" aria-label="Modèle" placeholder={placeholder} value={v} onChange={(e) => setV(e.target.value)} onBlur={() => v !== value && onSave(v.trim())} /><datalist id="agent-models">{items.slice(0, 1000).map((m) => <option key={m.id} value={m.id} />)}</datalist></div>;
 }
 
+interface Reason { code: string; label: string; source: string; source_label: string }
 function Watch() {
   const toast = useToast();
+  const { instruments } = useMarket();
   const wl = useApi<{ items: any[] }>('/api/watchlist');
   const rules = useApi<{ items: any[] }>('/api/alerts/rules');
+  const reasons = useApi<{ items: Reason[] }>('/api/watchlist/reasons');
   const [sym, setSym] = useState('');
+  const [reason, setReason] = useState('');
   const [type, setType] = useState('above');
   const [price, setPrice] = useState('');
   const [note, setNote] = useState('');
-  const addW = async () => { try { await api('/api/watchlist', { body: { symbol: sym } }); setSym(''); wl.reload(); } catch (e) { toast('error', 'Échec', (e as Error).message); } };
+  const [ruleSym, setRuleSym] = useState('');
+  const list = reasons.data?.items ?? [];
+  const picked = list.find((r) => r.code === reason);
+  const groups = useMemo(() => {
+    const g = new Map<string, typeof instruments>();
+    for (const i of instruments) g.set(i.asset_class, [...(g.get(i.asset_class) ?? []), i]);
+    return [...g.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [instruments]);
+  const originLabel = (src: string) => list.find((r) => r.source === src)?.source_label ?? src;
+  const addW = async () => { try { await api('/api/watchlist', { body: { symbol: sym, reason_code: reason } }); setSym(''); setReason(''); wl.reload(); toast('success', 'Instrument ajouté à la surveillance'); } catch (e) { toast('error', 'Ajout impossible', (e as Error).message); } };
   const addR = async () => {
     const n = Number(price.replace(',', '.'));
     const rule: Record<string, unknown> = { symbol: ruleSym.toUpperCase(), type, note };
     if (type === 'pct_move') rule.pct = n; else rule.price = n;
     try { await api('/api/alerts/rules', { body: { rule } }); setPrice(''); setNote(''); rules.reload(); } catch (e) { toast('error', 'Règle refusée', (e as Error).message); }
   };
-  const [ruleSym, setRuleSym] = useState('');
   return (
     <div className="grid c2">
-      <Panel title="Liste de surveillance" actions={<span className="row"><input className="input" style={{ width: 120 }} placeholder="Instrument" aria-label="Instrument à surveiller" value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} /><button className="btn primary" disabled={!sym.trim()} onClick={addW}>Ajouter</button></span>} flush>
+      <Panel title="Liste de surveillance" flush>
+        <div className="stack" style={{ padding: 12, gap: 8 }}>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <select className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Instrument à surveiller" value={sym} onChange={(e) => setSym(e.target.value)}>
+              <option value="">Choisir un instrument…</option>
+              {groups.map(([cls, items]) => <optgroup key={cls} label={CLASS_LABEL[cls] ?? cls}>{items.map((i) => <option key={i.symbol} value={i.symbol}>{i.symbol}{i.description ? ` — ${i.description}` : ''}</option>)}</optgroup>)}
+            </select>
+            <select className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Raison de la surveillance" value={reason} onChange={(e) => setReason(e.target.value)}>
+              <option value="">Choisir une raison…</option>
+              {list.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
+            </select>
+            <button className="btn primary" disabled={!sym || !reason} onClick={addW}>Ajouter</button>
+          </div>
+          <span className="muted">{picked ? <>Origine : <b>{picked.source_label}</b> (définie automatiquement selon la raison)</> : 'L’origine est définie automatiquement selon la raison choisie.'}</span>
+          {!instruments.length && <span className="warn">Aucun instrument disponible : le catalogue de marchés n’est pas encore chargé.</span>}
+        </div>
         <Async state={wl}>{(d) => <DataTable rows={d.items} rowKey={(r) => r.symbol} empty={<Empty title="Liste vide" hint="Les instruments retenus par le Scanner s’ajoutent ici ; vous pouvez aussi en ajouter à la main." />} cols={[
           { key: 's', header: 'Instrument', render: (r) => <span className="sym">{r.symbol}</span> },
-          { key: 'o', header: 'Origine', render: (r) => (r.source === 'manual' ? 'manuel' : r.source) },
+          { key: 'o', header: 'Origine', render: (r) => originLabel(r.source) },
           { key: 'r', header: 'Raison', hideSm: true, render: (r) => <span className="muted">{r.reason}</span> },
           { key: 'x', header: '', render: (r) => <button className="btn sm ghost" aria-label={`Retirer ${r.symbol}`} onClick={async () => { await api(`/api/watchlist/${r.symbol}`, { method: 'DELETE' }); wl.reload(); }}>Retirer</button> },
         ]} />}</Async>
@@ -215,7 +272,36 @@ function Misc() {
           <div className="row"><input className="input" style={{ maxWidth: 360 }} aria-label="User-Agent SEC" placeholder="Prénom Nom nom@exemple.com" value={ua} onChange={(e) => setUa(e.target.value)} /><button className="btn primary" disabled={!ua.trim()} onClick={saveUa}>Enregistrer</button></div>
         </div>
       </Panel>
+      <UpdatesPanel />
       <Panel title="À propos"><Async state={meta}>{(m) => <KV rows={[['Application', `${m.app} ${m.version}`], ['Mode', 'Paper trading uniquement'], ['Source des marchés', m.provider], ['Modèle IA par défaut', m.default_model], ['Skills', `${m.provenance.repo} @ ${String(m.provenance.commit).slice(0, 7)}`], ['Licence des skills', m.provenance.license]]} />}</Async></Panel>
     </div>
+  );
+}
+
+function UpdatesPanel() {
+  const u = useUpdate();
+  const info = u.info;
+  return (
+    <Panel title="Mises à jour">
+      <div className="stack">
+        <KV rows={[['Version installée', info?.current ?? '…'], ['Dernière version', info?.latest?.version ?? (u.checking ? 'Vérification…' : 'Inconnue')]]} />
+        <div className="row">
+          {info?.update_available ? <Pill kind="warn">Mise à jour disponible</Pill> : info && !info.error ? <Pill kind="ok">À jour</Pill> : null}
+          <button className="btn" disabled={u.checking} onClick={() => u.check(true)}>Vérifier maintenant</button>
+          {info?.update_available && <button className="btn primary" onClick={() => u.setOpen(true)}>Mettre à jour</button>}
+        </div>
+        {info?.error && <Banner kind="warn">Impossible de joindre la liste des releases : {info.error}</Banner>}
+        {info && info.releases.length > 0 && (
+          <table className="tbl" aria-label="Liste des versions">
+            <thead><tr><th>Version</th><th>Date</th><th /></tr></thead>
+            <tbody>
+              {info.releases.map((r) => (
+                <tr key={r.tag}><td>{r.version}{r.version === info.current && ' (installée)'}</td><td>{r.published_at ? dateTime(r.published_at) : ''}</td><td><a href={r.url} target="_blank" rel="noopener noreferrer">Notes</a></td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </Panel>
   );
 }

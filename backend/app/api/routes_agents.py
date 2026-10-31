@@ -186,9 +186,24 @@ async def decide(pid: int, body: DecideBody, rt: Runtime = Depends(runtime)):
 
 
 # ---------------------------------------------------------------- liste de surveillance
+# Raison choisie par l'utilisateur -> libellé affiché et ORIGINE, déduite automatiquement de la raison.
+WATCH_REASONS: dict[str, dict[str, str]] = {
+    "idea": {"label": "Idée personnelle", "source": "manual"},
+    "position": {"label": "Position à suivre", "source": "manual"},
+    "price_level": {"label": "Niveau de prix à surveiller", "source": "alerts"},
+    "scanner_setup": {"label": "Setup repéré (Scanner)", "source": "scanner"},
+    "breakout": {"label": "Cassure attendue (Entry)", "source": "entry"},
+    "news": {"label": "Actualité ou catalyseur (News)", "source": "news"},
+    "fundamentals": {"label": "Analyse fondamentale (Analyst)", "source": "analyst"},
+    "disclosures": {"label": "Déclarations d'élus (Pelosi)", "source": "pelosi"},
+}
+SOURCE_LABEL = {"manual": "Manuelle", "alerts": "Alertes", "scanner": "Scanner", "entry": "Entry", "news": "News", "analyst": "Analyst", "pelosi": "Pelosi"}
+
+
 class WatchBody(BaseModel):
     symbol: str
-    reason: str | None = None
+    reason_code: str | None = None
+    reason: str | None = None  # texte libre (rétrocompatibilité) ; ignoré si reason_code est fourni
 
 
 @router.get("/watchlist")
@@ -198,17 +213,31 @@ def watchlist():
                            "expires_at": w.expires_at.isoformat() + "Z" if w.expires_at else None} for w in s.scalars(select(WatchItem).order_by(WatchItem.added_at.desc()))]}
 
 
+@router.get("/watchlist/reasons")
+def watch_reasons():
+    return {"items": [{"code": k, "label": v["label"], "source": v["source"], "source_label": SOURCE_LABEL[v["source"]]} for k, v in WATCH_REASONS.items()]}
+
+
 @router.post("/watchlist")
 def watch_add(body: WatchBody, rt: Runtime = Depends(runtime)):
     sym = body.symbol.strip().upper()
     if not sym:
         raise HTTPException(400, "symbole requis")
+    if sym not in rt.feed.instruments and sym not in rt.feed.quotes:
+        raise HTTPException(400, f"instrument inconnu : {sym}")
+    if body.reason_code:
+        r = WATCH_REASONS.get(body.reason_code)
+        if not r:
+            raise HTTPException(400, f"raison inconnue : {body.reason_code}")
+        source, reason = r["source"], r["label"]
+    else:
+        source, reason = "manual", body.reason
     with session_scope() as s:
         w = s.get(WatchItem, sym)
         if w:
-            w.source, w.reason, w.expires_at = "manual", body.reason or w.reason, None
+            w.source, w.reason, w.expires_at = source, reason or w.reason, None
         else:
-            s.add(WatchItem(symbol=sym, source="manual", reason=body.reason))
+            s.add(WatchItem(symbol=sym, source=source, reason=reason))
     rt.orch.invalidate_watch()
     return {"ok": True, "symbol": sym}
 

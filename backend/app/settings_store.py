@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from .config import DEFAULT_MODEL
 from .db import session_scope
 from .models import Setting
 
@@ -18,6 +19,7 @@ DEFAULTS: dict[str, Any] = {
     "quote_hard_stale_s": 300,
     "scanner_universe": "live",          # live | watchlist | all
     "scanner_max_instruments": 300,
+    "llm_model": DEFAULT_MODEL,           # modèle OpenRouter utilisé par défaut par tous les agents (surchargeable par agent)
     "llm_enabled": True,                 # résumés IA optionnels (News/Analyst/Pelosi)
     "llm_daily_cost_limit_usd": 1.0,
     "llm_daily_token_limit": 300000,

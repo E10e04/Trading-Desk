@@ -5,6 +5,7 @@ import { Login } from './components/Login';
 import { Loading } from './components/ui';
 import { bootstrapToken, getToken, onTokenChange } from './lib/api';
 import { MarketProvider } from './lib/market';
+import { UpdateProvider } from './lib/update';
 
 const page = (f: () => Promise<{ default: React.ComponentType }>) => lazy(f);
 const Overview = page(() => import('./pages/Overview'));
@@ -34,6 +35,7 @@ export default function App() {
   if (!token) return <Login reason="Saisissez le jeton d’accès pour ouvrir l’interface. Sur l’ordinateur qui héberge le backend, il est récupéré automatiquement." />;
   return (
     <MarketProvider>
+      <UpdateProvider>
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route element={<Layout />}>
@@ -58,6 +60,7 @@ export default function App() {
           </Route>
         </Routes>
       </Suspense>
+      </UpdateProvider>
     </MarketProvider>
   );
 }

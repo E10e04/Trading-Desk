@@ -102,3 +102,59 @@ def test_set_key_validation(db, tmp_path):
     assert c.key_status()["configured"] and c.key_status()["source"] == "interface"
     c.set_key("")
     assert not c.key_status()["configured"]
+
+
+def reasoning_handler(req: httpx.Request):
+    """Modèle raisonnant : avec un petit plafond, tout part en raisonnement et `content` est vide (finish_reason=length)."""
+    if req.url.path.endswith("/key"):
+        return httpx.Response(200, json={"data": {"label": "t"}})
+    body = json.loads(req.content)
+    assert body["reasoning"] == {"effort": "low"}
+    if body["max_tokens"] < 1000:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "", "reasoning": "je réfléchis..."}, "finish_reason": "length"}], "usage": {}})
+    return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {"completion_tokens": 40}})
+
+
+async def test_modele_raisonnant_reponse_vide_relancee_avec_plus_de_jetons(db, tmp_path):
+    c = make(db, tmp_path, reasoning_handler)
+    out = await c.chat([{"role": "user", "content": "x"}], max_tokens=100)
+    assert out["text"] == "ok"
+    r = await c.test_connection()
+    assert r["ok"] and r["reply"] == "ok"
+
+
+async def test_reponse_toujours_vide_donne_un_message_clair(db, tmp_path):
+    def h(req):
+        if req.url.path.endswith("/key"):
+            return httpx.Response(200, json={"data": {}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": ""}, "finish_reason": "stop"}]})
+    c = make(db, tmp_path, h)
+    r = await c.test_connection()
+    assert not r["ok"] and "réponse vide" in r["error"]
+
+
+@pytest.mark.parametrize("status,needle", [(404, "confidentialité"), (402, "crédits"), (429, "quotas"), (401, "invalide")])
+async def test_erreurs_http_expliquees(db, tmp_path, status, needle):
+    def h(req):
+        if req.url.path.endswith("/key"):
+            return httpx.Response(200, json={"data": {}})
+        return httpx.Response(status, json={"error": {"message": "boum", "metadata": {"raw": "détail fournisseur"}}})
+    r = await make(db, tmp_path, h).test_connection()
+    assert not r["ok"] and needle in r["error"] and "boum" in r["error"]
+
+
+async def test_modele_par_defaut_reglable_dans_les_parametres(db, tmp_path):
+    seen = []
+    def h(req):
+        if req.url.path.endswith("/chat/completions"):
+            seen.append(json.loads(req.content)["model"])
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        return httpx.Response(200, json={"data": {}})
+    c = make(db, tmp_path, h)
+    assert c.default_model == "minimax/minimax-m3.1-flash"  # défaut : MiniMax M3.1 Flash
+    settings_store.update({"llm_model": "minimax/minimax-m3.1-flash:free"})
+    assert c.default_model == "minimax/minimax-m3.1-flash:free"
+    await c.chat([{"role": "user", "content": "x"}])
+    assert seen == ["minimax/minimax-m3.1-flash:free"]
+    settings_store.update({"llm_model": ""})  # champ vidé → retour au défaut intégré
+    assert c.default_model == "minimax/minimax-m3.1-flash"

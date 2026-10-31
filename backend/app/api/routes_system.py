@@ -47,6 +47,18 @@ def meta(rt: Runtime = Depends(runtime)):
             "default_model": rt.llm.default_model, "python": sys.version.split()[0]}
 
 
+# ---------------------------------------------------------------- mises à jour
+@router.get("/update/check")
+async def update_check(force: bool = False):
+    """Compare la version installée à la dernière release GitHub. Une panne réseau n'est jamais bloquante : `error` est renseigné."""
+    from .. import updates
+    try:
+        return {**await updates.check(force=force), "error": None, "repo": updates.DEFAULT_REPO}
+    except Exception as e:  # noqa: BLE001
+        return {"current": APP_VERSION, "latest": None, "releases": [], "update_available": False, "repo": updates.DEFAULT_REPO,
+                "error": f"vérification impossible : {type(e).__name__}: {str(e)[:120]}"}
+
+
 # ---------------------------------------------------------------- réglages
 @router.get("/settings")
 def get_settings_():

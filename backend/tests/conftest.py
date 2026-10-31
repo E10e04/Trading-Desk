@@ -40,6 +40,9 @@ class FakeHub:
         self.fail_negotiate = False
         self.drop_next = False
         self.unknown = {"BAD"}
+        self.calls: list = []
+        self.single_only = False
+        self.array_only = False
         self.tick_interval = 0.05
         self.sockets: list[WebSocket] = []
         self.send_close_message = False
@@ -78,12 +81,17 @@ class FakeHub:
                     for frame in filter(None, text.split(RS)):
                         m = json.loads(frame)
                         if m.get("type") == 1 and m.get("target") == "Subscribe":
-                            sym = m["arguments"][0]
-                            if sym in self.unknown:
+                            arg = m["arguments"][0]
+                            self.calls.append(arg)
+                            bad = (isinstance(arg, list) and (self.single_only or any(x in self.unknown for x in arg))) or \
+                                  (isinstance(arg, str) and (self.array_only or arg in self.unknown))
+                            if bad:
                                 await ws.send_text(json.dumps({"type": 3, "invocationId": m["invocationId"], "error": "unknown symbol"}) + RS)
                                 continue
-                            self.subscribed.append(sym)
-                            subs.add(sym)
+                            sym = arg
+                            for sym in (arg if isinstance(arg, list) else [arg]):
+                                self.subscribed.append(sym)
+                                subs.add(sym)
                             await ws.send_text(json.dumps({"type": 3, "invocationId": m["invocationId"], "result": None}) + RS)
                             await ws.send_text(json.dumps({"type": 1, "target": "ReceiveSubscriptionState", "arguments": [sym, "open"]}) + RS)
                             if tick_task is None:

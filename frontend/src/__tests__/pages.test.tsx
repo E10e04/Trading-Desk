@@ -58,7 +58,51 @@ describe('pages', () => {
     wrap(<Settings />);
     fireEvent.click(await screen.findByRole('tab', { name: 'Intelligence artificielle' }));
     expect(await screen.findByText('Aucune clé')).toBeTruthy();
-    expect(screen.getByPlaceholderText('minimax/minimax-m3.1-flash')).toBeTruthy();
+    const opt = (await screen.findAllByRole('option')).find((o) => (o as HTMLOptionElement).value === 'minimax/minimax-m3.1-flash') as HTMLOptionElement;
+    expect(opt).toBeTruthy();
+    expect((opt.parentElement as HTMLSelectElement).value).toBe('minimax/minimax-m3.1-flash');
+  });
+
+  it('Mise à jour : la fenêtre s’ouvre si la version diffère, « Plus tard » fait apparaître l’icône en bas de la barre latérale', async () => {
+    mockApi({
+      '/api/update/check': { current: '0.1.0', latest: { version: '0.2.0', tag: 'v0.2.0', name: 'x', notes: 'Notes', url: 'https://github.com/E10e04/Trading-Desk/releases/tag/v0.2.0', assets: [] }, releases: [], update_available: true, error: null, repo: 'E10e04/Trading-Desk' },
+    });
+    const { UpdateProvider, useUpdate } = await import('../lib/update');
+    const { UpdateDialog } = await import('../components/UpdateDialog');
+    function Probe() { const u = useUpdate(); return <span data-testid="pending">{String(u.pending)}</span>; }
+    wrap(<UpdateProvider><UpdateDialog /><Probe /></UpdateProvider>);
+    expect(await screen.findByText('Nouvelle version disponible')).toBeTruthy();
+    expect(screen.getByTestId('pending').textContent).toBe('false');
+    fireEvent.click(screen.getByText('Plus tard'));
+    await waitFor(() => expect(screen.queryByText('Nouvelle version disponible')).toBeNull());
+    expect(screen.getByTestId('pending').textContent).toBe('true');
+  });
+
+  it('Mise à jour : aucune fenêtre quand la version est la même ou quand le serveur est hors ligne', async () => {
+    mockApi({ '/api/update/check': { current: '0.2.0', latest: { version: '0.2.0', tag: 'v0.2.0', name: 'x', notes: '', url: 'u', assets: [] }, releases: [], update_available: false, error: null, repo: 'r' } });
+    const { UpdateProvider } = await import('../lib/update');
+    const { UpdateDialog } = await import('../components/UpdateDialog');
+    wrap(<UpdateProvider><UpdateDialog /></UpdateProvider>);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('Nouvelle version disponible')).toBeNull();
+  });
+
+  it('Surveillance : deux listes déroulantes (instrument, raison) ; l’origine est déduite de la raison côté serveur', async () => {
+    const calls = mockApi({
+      '/api/settings': { values: {}, defaults: {} },
+      '/api/watchlist/reasons': { items: [{ code: 'idea', label: 'Idée personnelle', source: 'manual', source_label: 'Manuel' }, { code: 'news', label: 'Actualité', source: 'news', source_label: 'Agent News' }] },
+      '/api/watchlist': { items: [] },
+      '/api/instruments': { items: [{ symbol: 'EURUSD', name: 'Euro / Dollar', asset_class: 'forex' }] },
+    });
+    const { default: Settings } = await import('../pages/Settings');
+    const { MarketProvider } = await import('../lib/market');
+    wrap(<MarketProvider><Settings /></MarketProvider>);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Surveillance et alertes' }));
+    const reason = (await screen.findByLabelText('Raison de la surveillance')) as HTMLSelectElement;
+    expect(reason.tagName).toBe('SELECT');
+    fireEvent.change(reason, { target: { value: 'news' } });
+    expect(await screen.findByText(/Agent News/)).toBeTruthy();
+    expect(calls.some((c) => c.init?.method === 'POST')).toBe(false);
   });
 
   it('Ordres : une proposition en attente peut être approuvée ou refusée, et l’approbation envoie « yes »', async () => {

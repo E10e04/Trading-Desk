@@ -1,3 +1,4 @@
+import httpx
 import datetime as dt
 import logging
 
@@ -186,3 +187,27 @@ def test_websocket_ticks_and_events(client):
     with pytest.raises(Exception):
         with client.websocket_connect("/ws?token=bad"):
             pass
+
+
+def test_watchlist_origine_deduite_de_la_raison(client):
+    reasons = {r["code"]: r for r in client.get("/api/watchlist/reasons").json()["items"]}
+    assert reasons["news"]["source"] == "news" and reasons["idea"]["source"] == "manual"
+    r = client.post("/api/watchlist", json={"symbol": "EURUSD", "reason_code": "news"})
+    assert r.status_code == 200
+    it = client.get("/api/watchlist").json()["items"][0]
+    assert it["source"] == "news" and it["reason"] == reasons["news"]["label"]
+    # l'origine ne peut pas être imposée séparément de la raison
+    client.post("/api/watchlist", json={"symbol": "EURUSD", "reason_code": "idea", "reason": "n'importe quoi"})
+    it = client.get("/api/watchlist").json()["items"][0]
+    assert it["source"] == "manual" and it["reason"] == reasons["idea"]["label"]
+    assert client.post("/api/watchlist", json={"symbol": "EURUSD", "reason_code": "inconnue"}).status_code == 400
+    assert client.post("/api/watchlist", json={"symbol": "ZZZZZZ", "reason_code": "idea"}).status_code == 400
+
+
+def test_update_endpoint_ne_plante_jamais_hors_ligne(client, monkeypatch):
+    async def boom(**kw):
+        raise httpx.ConnectError("pas de réseau")
+    from app import updates
+    monkeypatch.setattr(updates, "check", boom)
+    j = client.get("/api/update/check").json()
+    assert j["update_available"] is False and "vérification impossible" in j["error"]

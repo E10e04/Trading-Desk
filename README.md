@@ -106,3 +106,11 @@ cd desktop && npm test                                   # lanceur Electron, bac
 ## Licence
 
 MIT. Les skills vendorisés restent © Jake Schincariol (MIT), voir `backend/app/vendor/day_trader_skill/LICENSE` et `VENDOR.md`.
+
+## Mises à jour et releases
+
+- À chaque ouverture, l'application compare sa version à la dernière release de `E10e04/Trading-Desk`. Si elles diffèrent, une fenêtre propose la mise à jour ; « Plus tard » ajoute une icône en bas de la barre latérale (et un panneau Réglages › Apparence et sources › Mises à jour).
+- Windows : l'installateur se lance par-dessus l'ancienne version, sans désinstaller. macOS : le DMG s'ouvre, glissez l'application dans Applications. Installateurs non signés ; SHA-256 vérifié avant lancement.
+- Publier : Actions › « Release desktop apps » › Run workflow avec `version` (ex. 0.2.0). Le workflow injecte la version, construit les installateurs, crée le tag `vX.Y.Z` et la release.
+- BiQuote : SignalR `https://biquote.io/hubs/tick`, `Subscribe(symbols[])`, événement `ReceiveTick`, sans clé API.
+- IA : clé OpenRouter et modèle (défaut `minimax/minimax-m3.1-flash`) dans Réglages › Intelligence artificielle. Aucun agent actuel n'utilise la recherche web du LLM ; si elle était ajoutée, OpenRouter la facture (crédits requis) même avec un modèle `:free`.

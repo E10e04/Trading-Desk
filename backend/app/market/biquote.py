@@ -125,6 +125,7 @@ class BiquoteProvider(MarketDataProvider):
         # état du flux
         self._symbols: set[str] = set()
         self._subscribed: set[str] = set()
+        self._batch_ok: bool | None = None
         self.unavailable: dict[str, str] = {}
         self._sub_states: dict[str, str] = {}
         self._on_tick: TickHandler | None = None
@@ -219,7 +220,12 @@ class BiquoteProvider(MarketDataProvider):
         if self._client and self._client.state == "connected" and new:
             await self._subscribe_many(sorted(new))
 
+    BATCH = 50
+
     async def _subscribe_many(self, symbols: list[str]) -> None:
+        """Documentation BiQuote : `Subscribe(symbols: string[])`. On abonne par lots ; si le serveur refuse un lot (symbole
+        inconnu, ou ancienne version qui n'accepte qu'un symbole), on retombe sur un abonnement symbole par symbole,
+        ce qui isole les symboles indisponibles sans perdre les autres."""
         async def one(sym: str) -> None:
             async with self._sub_sem:
                 c = self._client
@@ -232,7 +238,24 @@ class BiquoteProvider(MarketDataProvider):
                 except SignalRError as e:
                     self.unavailable[sym] = str(e)[:200]
 
-        await asyncio.gather(*(one(s) for s in symbols))
+        async def batch(chunk: list[str]) -> None:
+            c = self._client
+            if not c or c.state != "connected":
+                return
+            if self._batch_ok is not False:
+                async with self._sub_sem:
+                    try:
+                        await c.invoke("Subscribe", chunk, timeout=20)
+                        self._subscribed.update(chunk)
+                        for sym in chunk:
+                            self.unavailable.pop(sym, None)
+                        self._batch_ok = True
+                        return
+                    except SignalRError as e:
+                        log.info("abonnement par lot refusé (%s) : repli symbole par symbole", str(e)[:120])
+            await asyncio.gather(*(one(s) for s in chunk))
+
+        await asyncio.gather(*(batch(symbols[i:i + self.BATCH]) for i in range(0, len(symbols), self.BATCH)))
 
     async def _handle_tick(self, *args: Any) -> None:
         rows: list[Any] = []

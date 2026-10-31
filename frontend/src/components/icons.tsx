@@ -30,6 +30,7 @@ export const Icons = {
   refresh: P(<><path d="M20 11a8 8 0 0 0-14.9-3M4 5v4h4" /><path d="M4 13a8 8 0 0 0 14.9 3M20 19v-4h-4" /></>),
   plus: P(<path d="M12 5v14M5 12h14" />),
   trash: P(<><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></>),
+  update: P(<><path d="M12 3v12M7 10l5 5 5-5" /><path d="M4 20h16" /></>),
   x: P(<path d="M6 6l12 12M18 6L6 18" />),
 };
 export const Logo = () => (

@@ -1,15 +1,36 @@
 name: Release desktop apps
-# Pousser un tag `vX.Y.Z` construit les installateurs Windows (NSIS) et macOS Intel (DMG) et les attache à la release GitHub.
+# Deux déclencheurs : pousser un tag `vX.Y.Z`, ou lancer ce workflow à la main avec l'entrée `version` (X.Y.Z).
+# Dans les deux cas : version injectée dans l'application, installateurs Windows (NSIS) + macOS Intel (DMG),
+# puis création du tag et de la release `vX.Y.Z` (ajoutée à la liste des releases du dépôt).
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version à publier (X.Y.Z, sans le v)'
+        required: true
 
 permissions:
   contents: write
 
 jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          INPUT: ${{ github.event.inputs.version }}
+          REF: ${{ github.ref_name }}
+        run: |
+          V="${INPUT:-$REF}"; V="${V#v}"
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version invalide : '$V' (attendu X.Y.Z)"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: meta
     strategy:
       fail-fast: false
       matrix:
@@ -20,6 +41,13 @@ jobs:
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
+      - name: Injecter la version ${{ needs.meta.outputs.version }}
+        env:
+          V: ${{ needs.meta.outputs.version }}
+        run: |
+          node -e "for (const f of ['desktop/package.json','frontend/package.json']) { const j=JSON.parse(require('fs').readFileSync(f,'utf8')); j.version=process.env.V; require('fs').writeFileSync(f, JSON.stringify(j,null,2)+'\n'); }"
+          python -c "import os,re,pathlib; p=pathlib.Path('backend/app/config.py'); t=p.read_text(encoding='utf-8'); n,c=re.subn(r'(?m)^(APP_VERSION = .* or )\"[^\"]*\"', lambda m: m.group(1)+'\"'+os.environ['V']+'\"', t); assert c==1; p.write_text(n,encoding='utf-8')"
+          grep -n '^APP_VERSION' backend/app/config.py
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - uses: actions/setup-python@v5
@@ -45,12 +73,25 @@ jobs:
         with:
           name: trading-desk-${{ matrix.target }}
           path: ${{ matrix.artifact }}
-      - name: Attacher à la release
-        if: startsWith(github.ref, 'refs/tags/')
+
+  release:
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: trading-desk-*
+          merge-multiple: true
+      - run: ls -l dist
+      - name: Créer le tag et la release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact }}
+          tag_name: v${{ needs.meta.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Trading Desk ${{ needs.meta.outputs.version }}
+          files: dist/*
           generate_release_notes: true
           body: |
             Application de bureau **paper trading** (aucun argent réel). Installateurs **non signés** : Windows SmartScreen / macOS Gatekeeper demanderont une autorisation manuelle.
-            macOS : build Intel x86_64, Electron 22.3.27 (macOS 11+).
+            Mise à jour : lancez le nouvel installateur par-dessus l'ancien, sans désinstaller. macOS : build Intel x86_64, Electron 22.3.27 (macOS 11+).

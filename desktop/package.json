@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/backend.test.js",
+    "test": "node --test test/backend.test.js test/updater.test.js",
     "dist:win": "electron-builder --win --x64 --publish never",
     "dist:mac": "electron-builder --mac --x64 --publish never"
   },

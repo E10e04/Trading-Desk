@@ -9,6 +9,8 @@ import { live, useConnState, useLiveEvent, useQuotes } from '../lib/live';
 import { useMarket } from '../lib/market';
 import { price } from '../lib/format';
 import { useTheme, type ThemeMode } from '../lib/theme';
+import { useUpdate } from '../lib/update';
+import { UpdateDialog } from './UpdateDialog';
 
 export const NAV: { group: string; items: { to: string; label: string; icon: keyof typeof Icons }[] }[] = [
   { group: 'Pilotage', items: [
@@ -82,6 +84,7 @@ export function Layout() {
   const unread = useApi<{ unread: number }>('/api/notifications?unread=true&limit=1', 20000);
   const [confirm, setConfirm] = useState(false);
   const kill = !!pipeline.data?.kill_switch;
+  const upd = useUpdate();
 
   useEffect(() => live.start(), []);
   useLiveEvent('notification', (n: { level: string; title: string; body?: string }) => {
@@ -123,6 +126,12 @@ export function Layout() {
             </div>
           ))}
         </nav>
+        {upd.pending && upd.info?.latest && (
+          <button className="rail-update" onClick={() => upd.setOpen(true)} title={`Mise à jour disponible : version ${upd.info.latest.version}`} aria-label={`Mise à jour disponible : version ${upd.info.latest.version}`}>
+            {Icons.update}
+            <span>Mise à jour {upd.info.latest.version}</span>
+          </button>
+        )}
       </aside>
       <header className="topbar">
         <MarketSwitcher />
@@ -145,6 +154,7 @@ export function Layout() {
         {kill && <div className="banner warn" role="status"><b>Interrupteur d’arrêt actif.</b> Les agents analysent mais ne prennent aucune position.</div>}
         <Outlet />
       </main>
+      <UpdateDialog />
       {confirm && (
         <Confirm title="Activer l’interrupteur d’arrêt ?" danger confirmLabel="Activer l’arrêt" message="Aucune nouvelle position automatique ne sera ouverte tant que l’interrupteur est actif. Les positions ouvertes et leurs stops/cibles ne sont pas modifiés." onConfirm={() => toggleKill(true)} onClose={() => setConfirm(false)} />
       )}

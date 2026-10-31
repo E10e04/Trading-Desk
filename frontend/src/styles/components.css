@@ -18,6 +18,10 @@
 .ticker .t { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; font-size: var(--fs-1); cursor: pointer; background: none; border: 0; padding: 0; }
 .ticker .t b { font-weight: 600; }
 
+.rail-update { margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 8px; border-radius: var(--r); border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--accent-soft); color: var(--text); cursor: pointer; text-align: left; }
+.rail-update svg { width: 17px; height: 17px; flex: none; color: var(--accent); }
+.rail-update:hover { border-color: var(--accent); }
+
 /* ------------------------------------------------------------ panneaux */
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); min-width: 0; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
@@ -137,7 +141,8 @@ pre.json { margin: 0; padding: 12px; background: var(--bg); border: 1px solid va
 }
 @media (max-width: 960px) {
   :root { --rail: 56px; }
-  .brand div, .nav a span, .nav-group, .nav .badge { display: none; }
+  .brand div, .nav a span, .nav-group, .nav .badge, .rail-update span { display: none; }
+  .rail-update { justify-content: center; padding: 9px 0; }
   .nav a { justify-content: center; padding: 9px 0; }
   .grid.c3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

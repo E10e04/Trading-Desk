@@ -50,7 +50,7 @@ class OpenRouterClient:
 
     @property
     def default_model(self) -> str:
-        return get_settings().openrouter_default_model
+        return (str(settings_store.get("llm_model") or "").strip()) or get_settings().openrouter_default_model
 
     def key_status(self) -> dict[str, Any]:
         k = self.api_key
@@ -112,6 +112,7 @@ class OpenRouterClient:
             res["error"] = "aucune clé OpenRouter configurée"
             return res
         t0 = time.monotonic()
+        res["steps"] = []
         try:
             async with self._client(20) as c:
                 for path in ("/key", "/auth/key"):
@@ -121,18 +122,22 @@ class OpenRouterClient:
                         res["key_label"] = d.get("label")
                         res["credit_limit"], res["usage_usd"] = d.get("limit"), d.get("usage")
                         res["free_tier"] = d.get("is_free_tier")
+                        res["steps"].append("clé acceptée par OpenRouter")
                         break
                     if r.status_code in (401, 403):
-                        res["error"] = "clé refusée par OpenRouter (401/403)"
+                        res["error"] = "clé refusée par OpenRouter (401/403) : vérifiez qu'elle est complète, active et non révoquée"
                         return res
         except httpx.HTTPError as e:
-            res["error"] = self._clean(f"OpenRouter injoignable: {e}")
+            res["error"] = self._clean(f"OpenRouter injoignable: {type(e).__name__} {e}")
             self.last_error = res["error"]
             return res
         try:
-            out = await self.chat([{"role": "user", "content": "Réponds uniquement: ok"}], model=model, agent_id="test", max_tokens=8,
-                                  force=True)
-            res.update(ok=True, reply=out["text"][:40], latency_ms=out["latency_ms"], cost_usd=out.get("cost_usd"))
+            # Les modèles « raisonnants » (dont MiniMax M3.1) dépensent des jetons à réfléchir avant de répondre :
+            # avec un plafond minuscule la réponse sortait vide. On laisse donc de la marge.
+            out = await self.chat([{"role": "user", "content": "Réponds uniquement par le mot : ok"}], model=model, agent_id="test",
+                                  max_tokens=400, force=True, allow_reasoning_text=True)
+            res.update(ok=True, reply=out["text"][:60], latency_ms=out["latency_ms"], cost_usd=out.get("cost_usd"))
+            res["steps"].append(f"le modèle {res['model']} a répondu")
         except LlmError as e:
             res["error"] = str(e)
         res["total_ms"] = int((time.monotonic() - t0) * 1000)
@@ -169,7 +174,8 @@ class OpenRouterClient:
 
     # ------------------------------------------------------------------ appel
     async def chat(self, messages: list[dict], *, model: str | None = None, agent_id: str | None = None, max_tokens: int = 600,
-                   temperature: float = 0.2, force: bool = False, timeout: float | None = None) -> dict[str, Any]:
+                   temperature: float = 0.2, force: bool = False, timeout: float | None = None,
+                   allow_reasoning_text: bool = False) -> dict[str, Any]:
         if not force:
             ok, why = self.available()
             if not ok:
@@ -178,29 +184,36 @@ class OpenRouterClient:
             raise LlmUnavailable("aucune clé OpenRouter configurée")
         model = model or self.default_model
         payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature,
-                   "usage": {"include": True}}
+                   "usage": {"include": True}, "reasoning": {"effort": "low"}}
         t0 = time.monotonic()
         err: str | None = None
         text, usage, cost = "", {}, None
         try:
             async with self._client(timeout or float(settings_store.get("llm_timeout_s"))) as c:
-                r = await c.post("/chat/completions", content=json.dumps(payload))
-            if r.status_code >= 400:
-                detail = ""
-                try:
-                    detail = (r.json().get("error") or {}).get("message", "")
-                except ValueError:
-                    detail = r.text[:120]
-                raise LlmError(self._clean(f"OpenRouter {r.status_code}: {detail}"))
-            data = r.json()
-            if data.get("error"):
-                raise LlmError(self._clean(f"OpenRouter: {(data['error'] or {}).get('message', 'erreur')}"))
-            choice = (data.get("choices") or [{}])[0]
-            text = ((choice.get("message") or {}).get("content") or "").strip()
-            usage = data.get("usage") or {}
-            cost = usage.get("cost")
+                for attempt in (1, 2):
+                    r = await c.post("/chat/completions", content=json.dumps(payload))
+                    if r.status_code >= 400:
+                        raise LlmError(self._clean(self._http_error(r)))
+                    data = r.json()
+                    if data.get("error"):
+                        e = data["error"] or {}
+                        raise LlmError(self._clean(f"OpenRouter : {e.get('message', 'erreur')} {self._raw(e)}".strip()))
+                    choice = (data.get("choices") or [{}])[0]
+                    msg = choice.get("message") or {}
+                    text = (msg.get("content") or "").strip()
+                    usage = data.get("usage") or {}
+                    cost = usage.get("cost")
+                    reasoning = (msg.get("reasoning") or "").strip() if isinstance(msg.get("reasoning"), str) else ""
+                    if text:
+                        break
+                    if attempt == 1 and choice.get("finish_reason") == "length":
+                        payload["max_tokens"] = max(payload["max_tokens"] * 4, 1200)  # réponse tronquée par le raisonnement : une relance
+                        continue
+                    if allow_reasoning_text and reasoning:
+                        text = f"(raisonnement) {reasoning[:200]}"
+                    break
             if not text:
-                raise LlmError("réponse vide du modèle")
+                raise LlmError("réponse vide du modèle (il a épuisé ses jetons en raisonnement) : choisissez un autre modèle ou augmentez la limite")
         except httpx.TimeoutException:
             err = "délai dépassé"
         except httpx.HTTPError as e:
@@ -221,6 +234,29 @@ class OpenRouterClient:
         self.last_error = None
         return {"text": text, "model": model, "latency_ms": latency, "cost_usd": cost,
                 "prompt_tokens": int(usage.get("prompt_tokens") or 0), "completion_tokens": int(usage.get("completion_tokens") or 0)}
+
+    @staticmethod
+    def _raw(e: dict) -> str:
+        raw = (e.get("metadata") or {}).get("raw")
+        return f"[{str(raw)[:160]}]" if raw else ""
+
+    def _http_error(self, r: httpx.Response) -> str:
+        try:
+            e = r.json().get("error") or {}
+            detail = f"{e.get('message', '')} {self._raw(e)}".strip()
+        except ValueError:
+            detail = r.text[:160]
+        hint = {
+            401: "clé invalide ou révoquée",
+            402: "crédits insuffisants : ce modèle est payant ou le compte n'a pas de crédit (essayez un modèle « :free »)",
+            403: "accès refusé (modération ou région)",
+            404: "modèle introuvable ou aucun fournisseur compatible avec vos paramètres de confidentialité OpenRouter (https://openrouter.ai/settings/privacy, requis pour les modèles gratuits)",
+            408: "délai dépassé côté fournisseur",
+            429: "limite de requêtes atteinte (les modèles gratuits ont des quotas journaliers et par minute)",
+            502: "le fournisseur du modèle est indisponible",
+            503: "aucun fournisseur disponible pour ce modèle pour l'instant",
+        }.get(r.status_code, "")
+        return f"OpenRouter {r.status_code} : {detail}" + (f" — {hint}" if hint else "")
 
     def stats(self) -> dict[str, Any]:
         with session_scope() as s:

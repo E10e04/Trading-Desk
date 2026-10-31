@@ -211,3 +211,46 @@ async def test_feed_freshness_and_fx():
     assert abs(feed.fx_to_usd("JPY") - 1 / 150.01) < 1e-9
     assert feed.fx_to_usd("ZZZ") is None and feed.fx_to_usd(None) is None
     await p.aclose()
+
+
+async def _wait_ticks(ticks, n=2):
+    for _ in range(80):
+        if len(ticks) >= n:
+            return
+        await asyncio.sleep(0.05)
+
+
+async def test_subscribe_envoie_un_tableau_de_symboles_comme_dans_la_doc(fake_hub):
+    ticks = []
+    p = BiquoteProvider(base_url=fake_hub.url, backoff_max=0.3, signalr_kwargs={"ping_interval": 0.5})
+    await p.subscribe(["EURUSD", "XAUUSD", "GBPUSD"])
+    await p.start_stream(lambda q: ticks.append(q))
+    await _wait_ticks(ticks, 3)
+    assert fake_hub.calls[0] == ["EURUSD", "GBPUSD", "XAUUSD"]  # un seul appel, tableau
+    assert p.stream_status()["subscribed"] == 3
+    await p.stop_stream()
+    await p.aclose()
+
+
+async def test_subscribe_repli_symbole_par_symbole_si_le_serveur_refuse_le_tableau(fake_hub):
+    fake_hub.single_only = True
+    ticks = []
+    p = BiquoteProvider(base_url=fake_hub.url, backoff_max=0.3, signalr_kwargs={"ping_interval": 0.5})
+    await p.subscribe(["EURUSD", "XAUUSD"])
+    await p.start_stream(lambda q: ticks.append(q))
+    await _wait_ticks(ticks)
+    assert p.stream_status()["subscribed"] == 2
+    await p.stop_stream()
+    await p.aclose()
+
+
+async def test_un_symbole_inconnu_dans_un_lot_n_empeche_pas_les_autres(fake_hub):
+    ticks = []
+    p = BiquoteProvider(base_url=fake_hub.url, backoff_max=0.3, signalr_kwargs={"ping_interval": 0.5})
+    await p.subscribe(["EURUSD", "BAD", "XAUUSD"])
+    await p.start_stream(lambda q: ticks.append(q))
+    await _wait_ticks(ticks)
+    st = p.stream_status()
+    assert st["subscribed"] == 2 and "BAD" in st["unavailable"]
+    await p.stop_stream()
+    await p.aclose()
