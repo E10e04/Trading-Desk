@@ -18,6 +18,8 @@ DEFAULTS: dict[str, Any] = {
     "quote_live_s": 30,
     "quote_hard_stale_s": 300,
     "crypto_source": "kraken",           # kraken : prix du marché réel (Kraken) | biquote : CFD du courtier MT5 ; effectif au prochain démarrage
+    "alert_all_assets": True,            # alerte de variation journalière sur TOUS les instruments disponibles
+    "alert_all_pct": 3.0,                # seuil (%) de variation depuis l'ouverture du jour
     "scanner_universe": "live",          # live | watchlist | all
     "scanner_max_instruments": 300,
     "llm_model": DEFAULT_MODEL,           # modèle OpenRouter utilisé par défaut par tous les agents (surchargeable par agent)

@@ -120,3 +120,10 @@ MIT. Les skills vendorisés restent © Jake Schincariol (MIT), voir `backend/app
 - **BiQuote** : Forex, métaux, indices, actions (SignalR + REST). Ses cryptos sont des CFD d'un courtier MetaTrader 5.
 - **Kraken** (par défaut pour les cryptos) : prix du marché réel en dollar (BTC/USD…), flux WebSocket public `wss://ws.kraken.com/v2`, sans compte ni clé, gratuit. Les 40 paires les plus échangées. Un seul abonnement groupé ; REST limité à 1 appel / 1,1 s ; reconnexions espacées de 5 s au moins (limite Kraken : ~150 connexions / 10 min / IP). Si Kraken est injoignable, les cryptos reviennent à BiQuote. Réglage : Réglages › Données › Source des cryptos (effectif au redémarrage).
 - La source de chaque cotation est affichée dans la légende du graphique. Diagnostic : Réglages › Données › Tester la connexion.
+
+## Interface et alertes
+
+- Thème sombre `#1e1e1e` (cartes `#262626`) et thème clair ; barre latérale rétractable (bouton en haut du menu, état conservé ; réduite automatiquement sous 960 px).
+- Tableau de bord : cartes de marché avec mini-courbes, graphique, carte portefeuille papier, marchés par classe, plus fortes hausses, dernières exécutions.
+- Alerte sur tous les actifs : activée par défaut ; notification quand un instrument varie d'au moins 3 % depuis l'ouverture du jour (une fois par jour et par sens). Réglages › Surveillance et alertes.
+- Logo : `frontend/public/logo.png` ; icônes de bureau : `desktop/build/icon.ico` et `icon.png`.

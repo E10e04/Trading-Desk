@@ -26,6 +26,9 @@ from .base import Agent, AgentContext, AgentResult
 from .loader import load_skill
 
 
+_ALL_RUNG: dict[str, str] = {}  # clé « symbole:date:sens » -> déjà notifié (évite de réinterroger la base à chaque passage)
+
+
 class AlertsAgent(Agent):
     id = "alerts"
     name = "Agent Alerts"
@@ -166,9 +169,46 @@ class AlertsAgent(Agent):
                 if row:
                     row.active = False
         ops = self.operational(ctx) if ctx.agent_params.get("operational", True) else []
+        allx = self.all_assets(ctx, now)
+        rings_out += allx["rang"]
         status = "partial" if errors else "ok"
-        summary = f"{len(data)} règle(s) active(s) : {len(rings_out)} déclenchée(s), {len(stale)} ignorée(s) (cotation non fraîche), {len(ops)} alerte(s) opérationnelle(s)."
-        return AgentResult(status, summary, {"rings": rings_out, "skipped_stale": stale, "errors": errors, "operational": ops}, [f"{x['rule']}: {x['error']}" for x in errors][:5], "live")
+        summary = (f"{len(data)} règle(s) active(s) : {len(rings_out) - len(allx['rang'])} déclenchée(s), {len(stale)} ignorée(s) (cotation non fraîche), {len(ops)} alerte(s) opérationnelle(s)."
+                   + (f" Alerte globale : {allx['checked']} instrument(s) surveillé(s), {len(allx['rang'])} mouvement(s) ≥ {allx['pct']} %." if allx["enabled"] else ""))
+        return AgentResult(status, summary, {"rings": rings_out, "skipped_stale": stale, "errors": errors, "operational": ops, "all_assets": allx}, [f"{x['rule']}: {x['error']}" for x in errors][:5], "live")
+
+    def all_assets(self, ctx: AgentContext, now: dt.datetime) -> dict:
+        """Alerte globale : TOUS les instruments disponibles sont surveillés sans créer une règle par instrument.
+        Sonne une fois par jour et par sens lorsque la variation depuis l'ouverture du jour atteint le seuil (réglage
+        `alert_all_pct`). Uniquement sur cotation fraîche ; au plus `max_per_run` notifications par passage."""
+        enabled = bool(settings_store.get("alert_all_assets"))
+        pct = float(settings_store.get("alert_all_pct") or 3.0)
+        out = {"enabled": enabled, "pct": pct, "checked": 0, "rang": []}
+        if not enabled:
+            return out
+        today = now.date().isoformat()
+        for k in [k for k in _ALL_RUNG if k.split(":")[1] != today]:
+            del _ALL_RUNG[k]
+        cands = []
+        for sym, q in list(ctx.feed.quotes.items()):
+            if q.change_pct is None or ctx.feed.freshness(sym)["status"] != "live":
+                continue
+            out["checked"] += 1
+            if abs(q.change_pct) >= pct:
+                cands.append((abs(q.change_pct), sym, q))
+        cap = int(ctx.agent_params.get("all_assets_max_per_run", 10))
+        for _, sym, q in sorted(cands, reverse=True):
+            direction = "up" if q.change_pct > 0 else "down"
+            key = f"{sym}:{today}:{direction}"
+            if key in _ALL_RUNG:
+                continue
+            if len(out["rang"]) >= cap:
+                break
+            _ALL_RUNG[key] = "1"
+            d = (ctx.feed.info(sym).digits or 5)
+            msg = f"{sym} {'+' if q.change_pct > 0 else '−'}{abs(q.change_pct):.2f} % depuis l'ouverture du jour (cours {q.mid:.{d}f}, source {q.provider or '?'})."
+            if notify(ctx.bus, "info" if direction == "up" else "warning", "alerts", msg[:120], msg, sym, dedupe_key=f"alert-all:{key}", throttle_s=86400):
+                out["rang"].append({"rule_id": None, "id": f"all-{sym}", "symbol": sym, "message": msg, "type": "pct_move_all"})
+        return out
 
     @staticmethod
     def _message(rule: dict, q: Any, d: int, status: dict) -> str:

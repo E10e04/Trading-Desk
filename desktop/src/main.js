@@ -29,7 +29,7 @@ async function boot() {
     return;
   }
   win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#171C24', title: 'Trading Desk',
+    width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#1E1E1E', title: 'Trading Desk',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.js') },
   });
   // Le jeton local est servi par /api/session (loopback uniquement) : l'interface le récupère toute seule.

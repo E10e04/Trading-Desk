@@ -68,3 +68,28 @@ async def test_operational_kill_switch(ctx):
     r = await AlertsAgent().run(ctx)
     assert not any(o["key"] == "kill" for o in r.output["operational"])   # limité (throttle)
     settings_store.update({"kill_switch": False})
+
+
+async def test_alerte_sur_tous_les_actifs(ctx):
+    from app import settings_store
+    from app.agents import alerts as al
+    al._ALL_RUNG.clear()
+    settings_store.update({"alert_all_assets": True, "alert_all_pct": 3.0})
+    ctx.feed.states["EURUSD"] = "open"
+    q = ctx.feed.quotes["EURUSD"]
+    ctx.feed.quotes["EURUSD"] = Quote("EURUSD", q.mid, q.mid, q.mid, None, real_now(), "open", change_pct=1.0)
+    r = await AlertsAgent().run(ctx)
+    assert r.output["all_assets"]["checked"] == 1 and not r.output["all_assets"]["rang"]       # 1 % < 3 %
+    ctx.feed.quotes["EURUSD"] = Quote("EURUSD", q.mid, q.mid, q.mid, None, real_now(), "open", change_pct=-3.4)
+    r = await AlertsAgent().run(ctx)
+    ring = r.output["all_assets"]["rang"]
+    assert len(ring) == 1 and ring[0]["symbol"] == "EURUSD" and "3.40 %" in ring[0]["message"]
+    r = await AlertsAgent().run(ctx)
+    assert not r.output["all_assets"]["rang"]                                                  # une seule fois par jour et par sens
+    ctx.feed.quotes["EURUSD"] = Quote("EURUSD", q.mid, q.mid, q.mid, None, real_now() - dt.timedelta(seconds=900), "open", change_pct=9.0)
+    al._ALL_RUNG.clear()
+    r = await AlertsAgent().run(ctx)
+    assert r.output["all_assets"]["checked"] == 0                                              # cotation périmée : ignorée
+    settings_store.update({"alert_all_assets": False})
+    assert (await AlertsAgent().run(ctx)).output["all_assets"]["enabled"] is False
+    settings_store.update({"alert_all_assets": True})

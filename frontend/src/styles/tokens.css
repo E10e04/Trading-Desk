@@ -2,12 +2,13 @@
 :root,
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #171c24;
-  --panel: #202733;
-  --panel-2: #273140;
-  --border: #354153;
-  --text: #e8edf5;
-  --text-2: #a6b1c2;
+  --bg: #1e1e1e;          /* fond de l'application (couleur demandée) */
+  --panel: #262626;       /* cartes, légèrement plus claires que le fond */
+  --panel-2: #303030;     /* champs, boutons, survols */
+  --rail-bg: #1e1e1e;     /* barre latérale : même fond, séparée par un filet */
+  --border: #373737;
+  --text: #ececec;
+  --text-2: #a1a1a1;
   --accent: #6488f5;
   --success: #35b889;
   --warning: #e7ad54;
@@ -21,6 +22,7 @@
   --row-alt: color-mix(in srgb, var(--panel-2) 35%, transparent);
   --focus: #8fa8ff;
   --on-accent: #0f1522;
+  --card-glow: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 60%);
   --shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.28);
   --grid: color-mix(in srgb, var(--border) 55%, transparent);
   --chart-up: #35b889;
@@ -31,6 +33,7 @@
   --bg: #f3f5f8;
   --panel: #ffffff;
   --panel-2: #e9edf3;
+  --rail-bg: #ffffff;
   --border: #d8dee8;
   --text: #1d2635;
   --text-2: #5f6b7d;
@@ -46,6 +49,7 @@
   --row-alt: color-mix(in srgb, var(--panel-2) 45%, transparent);
   --focus: #1f46b0;
   --on-accent: #ffffff;
+  --card-glow: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%);
   --shadow: 0 1px 2px rgba(29, 38, 53, 0.08), 0 6px 18px rgba(29, 38, 53, 0.07);
   --grid: color-mix(in srgb, var(--border) 70%, transparent);
   --chart-up: #16845f;
@@ -54,12 +58,12 @@
 :root {
   --font: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, Menlo, monospace;
-  --r-sm: 4px;
-  --r: 6px;
-  --r-lg: 10px;
-  --rail: 212px;
-  --topbar: 52px;
-  --gap: 12px;
+  --r-sm: 6px;
+  --r: 9px;
+  --r-lg: 14px;
+  --rail: 232px;
+  --topbar: 60px;
+  --gap: 16px;
   --fs-0: 11.5px;
   --fs-1: 13px;
   --fs-2: 14px;

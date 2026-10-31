@@ -83,8 +83,13 @@ def normalize_tick(raw: Any, provider: str = "biquote", now: dt.datetime | None 
         # cet ordinateur et le serveur). Sans cela, la dernière cotation en cache (marché fermé, parfois vieille de
         # plusieurs heures) envoyée à l'abonnement était prise pour un prix « en direct » et dessinait une fausse bougie.
         age_f = min(max((recv - ts_source).total_seconds() - skew_s, 0.0), 1e7) if ts_source else 0.0
+    chg = _pick(raw, "dayDiffPercent", "changePercent", "change_pct")
+    try:
+        chg_f = float(chg) if chg is not None and math.isfinite(float(chg)) and abs(float(chg)) < 1000 else None
+    except (TypeError, ValueError):
+        chg_f = None
     return Quote(symbol=sym, bid=bid, ask=ask, mid=mid, ts_source=ts_source,
-                 ts_recv=recv, market_state=state, provider=provider, age_at_recv_s=age_f)
+                 ts_recv=recv, market_state=state, provider=provider, age_at_recv_s=age_f, change_pct=chg_f)
 
 
 def parse_bars(payload: Any) -> list[Bar]:

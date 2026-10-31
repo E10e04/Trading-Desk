@@ -46,7 +46,7 @@ export default function Settings() {
             {tab === 'exec' && <Exec vals={d.values} save={save} />}
             {tab === 'data' && <Data vals={d.values} save={save} />}
             {tab === 'ai' && <AI vals={d.values} save={save} />}
-            {tab === 'watch' && <Watch />}
+            {tab === 'watch' && <Watch vals={d.values} save={save} />}
             {tab === 'misc' && <Misc />}
           </>
         )}
@@ -203,7 +203,7 @@ function ModelCell({ value, placeholder, items, onSave }: { value: string; place
 }
 
 interface Reason { code: string; label: string; source: string; source_label: string }
-function Watch() {
+function Watch({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }) {
   const toast = useToast();
   const { instruments } = useMarket();
   const wl = useApi<{ items: any[] }>('/api/watchlist');
@@ -232,6 +232,10 @@ function Watch() {
   };
   return (
     <div className="grid c2">
+      <Panel title="Alerte sur tous les actifs">
+        <Row title="Surveiller tous les instruments disponibles" hint="Une notification est émise, une fois par jour et par sens, quand un instrument bouge d’au moins le seuil depuis l’ouverture du jour. Fonctionne sur les cotations en direct de tout le catalogue (BiQuote et Kraken), sans créer une règle par instrument."><Switch label="Alerte sur tous les actifs" checked={vals.alert_all_assets !== false} onChange={(v) => save({ alert_all_assets: v }, v ? 'Alerte globale activée' : 'Alerte globale désactivée')} /></Row>
+        <Row title="Seuil de variation (%)" hint="Variation depuis l’ouverture du jour, à la hausse ou à la baisse."><NumberSetting k="alert_all_pct" vals={vals} save={save} /></Row>
+      </Panel>
       <Panel title="Liste de surveillance" flush>
         <div className="stack" style={{ padding: 12, gap: 8 }}>
           <div className="row" style={{ flexWrap: 'wrap' }}>

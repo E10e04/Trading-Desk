@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Icons } from './icons';
 import { Pill } from './ui';
+import { Avatar } from './Visual';
 import { CLASS_LABEL, FRESH_LABEL, price } from '../lib/format';
 import { useQuote, useQuotes } from '../lib/live';
 import { useMarket, type Instrument } from '../lib/market';
@@ -57,10 +58,12 @@ export function MarketSwitcher() {
   const cur = byId(symbol);
   return (
     <div className="rel" ref={ref}>
-      <button className="btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)} title="Changer de marché">
+      <button className="search-trigger" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)} title="Rechercher ou changer de marché">
+        <span className="si">{Icons.search}</span>
+        <span className="hide-sm muted">Rechercher…</span>
         <b>{symbol}</b>
         <span className="muted hide-sm">{cur ? CLASS_LABEL[cur.asset_class] ?? cur.asset_class : ''}</span>
-        {Icons.chevron}
+        <span className="si">{Icons.chevron}</span>
       </button>
       {open && (
         <div className="menu" onKeyDown={(e) => {
@@ -84,7 +87,7 @@ export function MarketSwitcher() {
               const qq = quotes.get(i.symbol) ?? i.quote ?? undefined;
               return (
                 <button key={i.symbol} className="switcher-item" role="option" aria-selected={n === idx} onClick={() => choose(i)}>
-                  <b style={{ minWidth: 76 }}>{i.symbol}</b>
+                  <Avatar symbol={i.symbol} size={22} /><b style={{ minWidth: 76 }}>{i.symbol}</b>
                   <span className="d">{i.description || CLASS_LABEL[i.asset_class]}</span>
                   <span className="num" style={{ minWidth: 70 }}>{qq ? price(qq.mid, i.digits) : '—'}</span>
                   <span className={`pill plain ${qq?.freshness === 'live' ? 'ok' : qq?.freshness === 'stale' ? 'warn' : 'mute'}`} style={{ width: 9, height: 9, padding: 0 }} title={FRESH_LABEL[qq?.freshness ?? 'unknown']} />

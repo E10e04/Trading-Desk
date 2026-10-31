@@ -169,7 +169,7 @@ class KrakenProvider(MarketDataProvider):
                                   live=True, raw_type="crypto"))
         return out
 
-    def _mkquote(self, sym: str, bid: Any, ask: Any, last: Any, ts: Any, now: dt.datetime | None = None) -> Quote | None:
+    def _mkquote(self, sym: str, bid: Any, ask: Any, last: Any, ts: Any, now: dt.datetime | None = None, chg: Any = None) -> Quote | None:
         bid_f, ask_f, last_f = _f(bid), _f(ask), _f(last)
         if bid_f is not None and ask_f is not None and bid_f > ask_f:
             bid_f = ask_f = None
@@ -179,7 +179,11 @@ class KrakenProvider(MarketDataProvider):
         recv = now or utcnow()
         ts_s = parse_ts(ts)
         age = min(max((recv - ts_s).total_seconds() - self.clock_skew_s, 0.0), 1e7) if ts_s else 0.0
-        return Quote(sym, bid_f, ask_f, mid, ts_s, recv, "open", self.name, age)  # la crypto cote 24 h/24
+        try:
+            chg_f = float(chg) if chg is not None and abs(float(chg)) < 1000 else None
+        except (TypeError, ValueError):
+            chg_f = None
+        return Quote(sym, bid_f, ask_f, mid, ts_s, recv, "open", self.name, age, chg_f)  # la crypto cote 24 h/24
 
     async def latest(self, symbols: list[str]) -> dict[str, Quote]:
         out: dict[str, Quote] = {}
@@ -190,7 +194,9 @@ class KrakenProvider(MarketDataProvider):
             for s in chunk:
                 t = res.get(self.pairs[s]["rest"]) or res.get(self.pairs[s]["alt"])
                 if isinstance(t, dict):
-                    q = self._mkquote(s, (t.get("b") or [None])[0], (t.get("a") or [None])[0], (t.get("c") or [None])[0], None)
+                    last, opn = _f((t.get("c") or [None])[0]), _f(t.get("o"))
+                    chg = (last - opn) / opn * 100 if last and opn else None  # `o` = prix d'ouverture du jour (UTC)
+                    q = self._mkquote(s, (t.get("b") or [None])[0], (t.get("a") or [None])[0], last, None, chg=chg)
                     if q:
                         out[s] = q
         return out
@@ -264,7 +270,7 @@ class KrakenProvider(MarketDataProvider):
             return
         for row in msg.get("data") or []:
             sym = self._by_ws.get(str(row.get("symbol", "")))
-            q = self._mkquote(sym, row.get("bid"), row.get("ask"), row.get("last"), row.get("timestamp")) if sym else None
+            q = self._mkquote(sym, row.get("bid"), row.get("ask"), row.get("last"), row.get("timestamp"), chg=row.get("change_pct")) if sym else None
             if q is None:
                 self.status["ticks_invalid"] += 1
                 continue

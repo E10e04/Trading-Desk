@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Icons, Logo } from './icons';
 import { Confirm, Pill, useToast } from './ui';
 import { MarketSwitcher } from './Market';
 import { api } from '../lib/api';
-import { useApi } from '../lib/hooks';
+import { useApi, usePersisted } from '../lib/hooks';
+import { Avatar, Change } from './Visual';
 import { live, useConnState, useLiveEvent, useQuotes } from '../lib/live';
 import { useMarket } from '../lib/market';
 import { price } from '../lib/format';
@@ -68,8 +69,39 @@ function Ticker() {
         const q = quotes.get(s);
         return (
           <button key={s} className="t" onClick={() => setSymbol(s)} title={q ? q.freshness : 'pas de cotation'}>
+            <Avatar symbol={s} size={20} />
             <b>{s}</b>
             <span className={q?.freshness === 'live' ? '' : 'muted'}>{q ? price(q.mid, q.digits) : '—'}</span>
+            <Change value={q?.chg} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function QuickWatch() {
+  const { instruments, setSymbol } = useMarket();
+  const wl = useApi<{ items: { symbol: string }[] }>('/api/watchlist', 30000);
+  const syms = useMemo(() => {
+    const have = new Set(instruments.map((i) => i.symbol));
+    const mine = (wl.data?.items ?? []).map((w) => w.symbol).filter((x) => have.has(x));
+    return (mine.length ? mine : PREFERRED.filter((x) => have.has(x))).slice(0, 4);
+  }, [instruments, wl.data]);
+  const quotes = useQuotes(syms);
+  const nav = useNavigate();
+  if (!syms.length) return null;
+  return (
+    <div className="rail-block">
+      <div className="nav-group">Liste rapide</div>
+      {syms.map((s) => {
+        const q = quotes.get(s);
+        return (
+          <button key={s} className="qw" onClick={() => { setSymbol(s); nav(`/instrument/${s}`); }}>
+            <Avatar symbol={s} size={24} />
+            <b>{s}</b>
+            <span className="num">{q ? price(q.mid, q.digits) : '—'}</span>
+            <Change value={q?.chg} />
           </button>
         );
       })}
@@ -78,6 +110,16 @@ function Ticker() {
 }
 
 export function Layout() {
+  const [collapsedPref, setCollapsed] = usePersisted<boolean>('rail.collapsed', false);
+  const [narrow, setNarrow] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 960px)').matches);
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const m = matchMedia('(max-width: 960px)');
+    const on = () => setNarrow(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  const collapsed = collapsedPref || narrow;  // sous 960 px la barre est toujours réduite
   const { mode, setMode } = useTheme();
   const toast = useToast();
   const pipeline = useApi<{ kill_switch: boolean; auto_execute: boolean; pipeline_enabled: boolean }>('/api/pipeline/status', 5000);
@@ -103,14 +145,17 @@ export function Layout() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${collapsed ? 'collapsed' : ''}`}>
       <aside className="rail">
         <div className="brand">
           <Logo />
-          <div>
+          <div className="brand-text">
             Trading Desk
             <small>Paper trading</small>
           </div>
+          <button className="rail-toggle" onClick={() => setCollapsed(!collapsed)} aria-pressed={collapsed} aria-label={collapsed ? 'Agrandir la barre latérale' : 'Réduire la barre latérale'} title={collapsed ? 'Agrandir le menu' : 'Réduire le menu'}>
+            {Icons.panel}
+          </button>
         </div>
         <nav className="nav" aria-label="Navigation principale">
           {NAV.map((g) => (
@@ -126,6 +171,14 @@ export function Layout() {
             </div>
           ))}
         </nav>
+        <QuickWatch />
+        <Link to="/agents" className="rail-card" title="Agents IA">
+          <span className="ico">{Icons.bolt}</span>
+          <span className="rc-text">
+            <b>{pipeline.data?.kill_switch ? 'Arrêt d’urgence actif' : pipeline.data?.pipeline_enabled === false ? 'Pipeline en pause' : 'Agents en marche'}</b>
+            <small>{pipeline.data?.auto_execute ? 'Exécution automatique (papier)' : 'Approbation manuelle'}</small>
+          </span>
+        </Link>
         {upd.pending && upd.info?.latest && (
           <button className="rail-update" onClick={() => upd.setOpen(true)} title={`Mise à jour disponible : version ${upd.info.latest.version}`} aria-label={`Mise à jour disponible : version ${upd.info.latest.version}`}>
             {Icons.update}

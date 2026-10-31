@@ -65,7 +65,7 @@ describe('interface', () => {
   test('thème : clair et sombre aux couleurs exactes, persistant, « système » suit le navigateur', async () => {
     const { ctx, page } = await open('/', { scheme: 'dark' });
     await page.getByRole('heading', { name: 'Vue d’ensemble' }).waitFor();
-    assert.equal(await bg(page), 'rgb(23, 28, 36)'); // #171C24
+    assert.equal(await bg(page), 'rgb(30, 30, 30)'); // #1E1E1E
     await page.getByRole('button', { name: 'Clair' }).click();
     assert.equal(await bg(page), 'rgb(243, 245, 248)'); // #F3F5F8
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.panel, .rail')).backgroundColor), 'rgb(255, 255, 255)');
@@ -73,7 +73,7 @@ describe('interface', () => {
     await page.getByRole('heading', { name: 'Vue d’ensemble' }).waitFor();
     assert.equal(await bg(page), 'rgb(243, 245, 248)');
     await page.getByRole('button', { name: 'Système' }).click();
-    assert.equal(await bg(page), 'rgb(23, 28, 36)'); // le navigateur est en sombre
+    assert.equal(await bg(page), 'rgb(30, 30, 30)'); // le navigateur est en sombre
     await ctx.close();
   });
 
@@ -84,9 +84,9 @@ describe('interface', () => {
     await page.getByLabel('Rechercher', { exact: true }).fill('xau');
     await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
     await page.getByLabel('Rechercher', { exact: true }).fill('');
-    await page.getByRole('button', { name: /EURUSD/ }).first().click(); // sélecteur de la barre du haut
+    await page.locator('.search-trigger').click(); // recherche / sélecteur de la barre du haut
     await page.getByRole('option', { name: /GBPUSD/ }).click();
-    await page.getByRole('button', { name: /GBPUSD/ }).first().waitFor();
+    await page.locator('.search-trigger', { hasText: 'GBPUSD' }).waitFor();
     await ctx.close();
   });
 
@@ -234,6 +234,33 @@ describe('interface', () => {
     assert.ok(box.y + box.height > rail.y + rail.height - 40, 'icône tout en bas de la barre latérale');
     await icon.click();
     await page.getByText('Nouvelle version disponible').waitFor();
+    await ctx.close();
+  });
+
+  test('barre latérale : réduire / agrandir, état conservé après rechargement', async () => {
+    const { ctx, page } = await open('/');
+    const rail = page.locator('aside.rail');
+    await rail.waitFor();
+    const wide = (await rail.boundingBox()).width;
+    await page.getByRole('button', { name: 'Réduire la barre latérale' }).click();
+    await page.waitForFunction(() => document.querySelector('aside.rail').getBoundingClientRect().width < 90);
+    const narrow = (await rail.boundingBox()).width;
+    assert.ok(narrow < 100 && wide > 200, `${wide} -> ${narrow}`);
+    assert.equal(await page.locator('.nav a span').first().isVisible(), false); // icônes seules
+    await page.reload();
+    await page.waitForSelector('aside.rail');
+    await page.waitForFunction(() => document.querySelector('aside.rail').getBoundingClientRect().width < 100);
+    await page.getByRole('button', { name: 'Agrandir la barre latérale' }).click();
+    await page.waitForFunction((w) => document.querySelector('aside.rail').getBoundingClientRect().width > w - 5, wide);
+    await ctx.close();
+  });
+
+  test('réglages : alerte sur tous les actifs activée par défaut', async () => {
+    const { ctx, page } = await open('/settings');
+    await page.getByRole('tab', { name: 'Surveillance et alertes' }).click();
+    const sw = page.getByLabel('Alerte sur tous les actifs');
+    await sw.waitFor({ state: 'attached' });
+    assert.equal(await sw.isChecked(), true);
     await ctx.close();
   });
 });

@@ -12,6 +12,7 @@ export interface Quote {
   recv: string;
   lag_s?: number | null;
   source?: string;
+  chg?: number | null;  // variation de la journée (%)
   freshness: 'live' | 'stale' | 'closed' | 'unknown';
   age_s: number | null;
   market_state: string;

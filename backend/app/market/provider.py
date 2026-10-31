@@ -26,6 +26,7 @@ class Quote:
     market_state: str = "unknown"  # open | closed | unknown
     provider: str = ""
     age_at_recv_s: float = 0.0  # âge de la cotation à la réception (ex. `quoteAgeSeconds` de BiQuote)
+    change_pct: float | None = None  # variation de la journée en %, si la source la fournit
 
     @property
     def spread(self) -> float | None:

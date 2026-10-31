@@ -31,11 +31,8 @@ export const Icons = {
   plus: P(<path d="M12 5v14M5 12h14" />),
   trash: P(<><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></>),
   update: P(<><path d="M12 3v12M7 10l5 5 5-5" /><path d="M4 20h16" /></>),
+  panel: P(<><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></>),
+  bolt: P(<path d="M13 2L4 14h7l-1 8 9-12h-7z" />),
   x: P(<path d="M6 6l12 12M18 6L6 18" />),
 };
-export const Logo = () => (
-  <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
-    <rect width="32" height="32" rx="7" fill="var(--panel-2)" stroke="var(--border)" />
-    <path d="M5 22l6-7 5 4 6-9 5 6" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
+export const Logo = ({ size = 34 }: { size?: number }) => <img src="/logo.png" width={size} height={size} alt="" className="logo-img" />;
