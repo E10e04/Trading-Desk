@@ -140,12 +140,18 @@ class MarketFeed:
             status = "stale"
         return {"status": status, "age_s": round(age, 1), "hard_stale": age > self.hard_stale_s}
 
+    @staticmethod
+    def source_lag(q: Quote) -> float | None:
+        """Retard entre l'horodatage de la source et la réception (s). None si la source n'en donne pas ; peut être négatif
+        (horloges désynchronisées). C'est la mesure du retard réel du fournisseur, que l'âge de cotation ne montre pas."""
+        return round((q.ts_recv - q.ts_source).total_seconds(), 1) if q.ts_source else None
+
     def quote_view(self, q: Quote) -> dict[str, Any]:
         inst = self.instruments.get(q.symbol)
         f = self.freshness(q.symbol)
         return {"symbol": q.symbol, "bid": q.bid, "ask": q.ask, "mid": q.mid, "spread": q.spread,
                 "ts": (q.ts_source or q.ts_recv).isoformat() + "Z", "recv": q.ts_recv.isoformat() + "Z",
-                "freshness": f["status"], "age_s": f["age_s"], "market_state": self.states.get(q.symbol, q.market_state),
+                "lag_s": self.source_lag(q), "freshness": f["status"], "age_s": f["age_s"], "market_state": self.states.get(q.symbol, q.market_state),
                 "digits": inst.digits if inst else None}
 
     def instrument_view(self, symbol: str) -> dict[str, Any] | None:
@@ -220,7 +226,8 @@ class MarketFeed:
         live = sum(1 for s in self.quotes if self.freshness(s)["status"] == "live")
         stale = sum(1 for s in self.quotes if self.freshness(s)["status"] == "stale")
         closed = sum(1 for s in self.quotes if self.freshness(s)["status"] == "closed")
-        return {"provider": self.provider.name, "stream": st, "instruments": total, "quotes": len(self.quotes),
+        lags = sorted(l for l in (self.source_lag(q) for q in self.quotes.values() if q.age_at_recv_s == 0 and self.freshness(q.symbol)["status"] == "live") if l is not None)
+        return {"provider": self.provider.name, "stream": st, "source_lag_median_s": lags[len(lags) // 2] if lags else None, "instruments": total, "quotes": len(self.quotes),
                 "live": live, "stale": stale, "closed": closed, "catalogue_error": self.catalogue_error,
                 "catalogue_loaded_at": self.instruments_loaded_at.isoformat() + "Z" if self.instruments_loaded_at else None,
                 "subscribe_mode": self.subscribe_mode, "live_threshold_s": self.live_s}

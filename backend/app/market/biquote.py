@@ -194,7 +194,7 @@ class BiquoteProvider(MarketDataProvider):
                       from_: dt.datetime | None = None, to: dt.datetime | None = None) -> list[Bar]:
         if interval not in INTERVALS:
             raise ProviderError(f"intervalle inconnu: {interval}")
-        params: dict[str, Any] = {"interval": interval, "limit": limit}
+        params: dict[str, Any] = {"interval": interval, "limit": max(1, min(int(limit), 1000))}  # plafond documenté : 1000
         if from_:
             params["from"] = from_.strftime("%Y-%m-%dT%H:%M:%SZ")
         if to:
@@ -421,6 +421,28 @@ class BiquoteProvider(MarketDataProvider):
             add("Catalogue /api/symbols", n > 0, f"{n} symboles")
         except Exception as e:  # noqa: BLE001
             add("Catalogue /api/symbols", False, str(e))
+        now = utcnow()
+        for sym in ("EURUSD", "BTCUSD"):
+            try:
+                r = await self._http.get(f"/api/{sym}", timeout=10)
+                if r.status_code != 200:
+                    add(f"Fraîcheur REST {sym}", False, f"HTTP {r.status_code}")
+                    continue
+                d = r.json()
+                ts = parse_ts(d.get("timestamp"))
+                lag = f"{(now - ts).total_seconds():.0f} s" if ts else "horodatage absent"
+                add(f"Fraîcheur REST {sym}", True, f"mid {d.get('mid')} · état {d.get('marketState')} · âge déclaré {d.get('quoteAgeSeconds')} s · retard de l'horodatage {lag} · source {d.get('source')}")
+            except Exception as e:  # noqa: BLE001
+                add(f"Fraîcheur REST {sym}", False, f"{type(e).__name__}: {e}")
+        try:
+            bars = await self.history("EURUSD", "1m", limit=5)
+            if bars:
+                lag = now.timestamp() - dt.datetime.now(dt.timezone.utc).timestamp() + (dt.datetime.now(dt.timezone.utc).timestamp() - bars[-1].ts)
+                add("Dernière bougie 1m EURUSD", lag < 900, f"ouverte il y a {lag:.0f} s (UTC) — si ce chiffre est de plusieurs heures ou négatif, le fuseau de l'historique est décalé")
+            else:
+                add("Dernière bougie 1m EURUSD", False, "aucune bougie")
+        except Exception as e:  # noqa: BLE001
+            add("Dernière bougie 1m EURUSD", False, f"{type(e).__name__}: {e}")
         c = SignalRClient(self.base_url, self.hub_path, headers=self._headers, http_transport=self._transport, **self._signalr_kwargs)
         got: list[Any] = []
         c.on("ReceiveTick", lambda *a: got.append(a))
@@ -438,7 +460,12 @@ class BiquoteProvider(MarketDataProvider):
                 if got:
                     break
                 await asyncio.sleep(0.1)
-            add("Réception ReceiveTick", bool(got), "tick reçu" if got else "aucun tick en 8 s (marché peut-être fermé)")
+            detail = "aucun tick en 8 s (marché peut-être fermé)"
+            if got:
+                q = normalize_tick(got[0][0] if got[0] else None)
+                ts = q.ts_source if q else None
+                detail = f"tick reçu — retard de l'horodatage {(utcnow() - ts).total_seconds():.1f} s" if ts else "tick reçu (sans horodatage exploitable)"
+            add("Réception ReceiveTick", bool(got), detail)
         except Exception as e:  # noqa: BLE001
             add("WebSocket / abonnement", False, f"{type(e).__name__}: {e}")
         finally:

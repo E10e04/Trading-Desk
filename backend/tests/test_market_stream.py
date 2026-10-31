@@ -81,7 +81,7 @@ def test_merge_and_aggregate():
     hist = [Bar(ts=60 * i, o=1, h=2, l=0.5, c=1.5) for i in range(5)]
     live = [Bar(ts=120, o=9, h=9, l=9, c=9, closed=False)]
     m = merge(hist, live, 100)
-    assert len(m) == 5 and m[2].o == 9
+    assert len(m) == 5 and m[2].o == 1 and m[2].h == 9 and m[2].l == 0.5 and m[2].c == 9  # ouverture/extrêmes de l'historique, dernier prix live
     agg = aggregate([Bar(ts=300 + 60 * i, o=i + 1, h=i + 2, l=i, c=i + 1.5) for i in range(5)], 300)
     assert len(agg) == 1 and agg[0].o == 1 and agg[0].h == 6 and agg[0].l == 0 and agg[0].c == 5.5
 

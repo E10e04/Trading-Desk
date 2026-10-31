@@ -12,6 +12,9 @@ const STEP: Record<TF, number> = { '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
 export interface PriceLine { price: number; title: string; kind: 'entry' | 'stop' | 'target' | 'level' }
 interface Bar { t: number; o: number; h: number; l: number; c: number }
 
+/** lightweight-charts affiche l'heure UTC ; TradingView affiche l'heure locale. On décale l'axe pour que les deux concordent. */
+const tzShift = (t: number) => t - new Date(t * 1000).getTimezoneOffset() * 60;
+
 function css(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -68,7 +71,7 @@ export function Chart({ symbol, tf, height = 420, lines = [], digits }: { symbol
     api<{ bars: Bar[]; freshness: { status: string; age_s: number | null } }>(`/api/bars/${encodeURIComponent(symbol)}?tf=${tf}&limit=600`)
       .then((r) => {
         if (dead || !series.current) return;
-        const d = r.bars.map((b) => ({ time: b.t as UTCTimestamp, open: b.o, high: b.h, low: b.l, close: b.c }));
+        const d = r.bars.map((b) => ({ time: tzShift(b.t) as UTCTimestamp, open: b.o, high: b.h, low: b.l, close: b.c }));
         const dg = digits ?? 5;
         series.current.applyOptions({ priceFormat: { type: 'price', precision: dg, minMove: 1 / 10 ** dg } });
         series.current.setData(d);
@@ -94,7 +97,7 @@ export function Chart({ symbol, tf, height = 420, lines = [], digits }: { symbol
     else if (!l || bucket > l.t) b = { t: bucket, o: q.mid, h: q.mid, l: q.mid, c: q.mid };
     else return;
     last.current = b;
-    series.current.update({ time: b.t as UTCTimestamp, open: b.o, high: b.h, low: b.l, close: b.c });
+    series.current.update({ time: tzShift(b.t) as UTCTimestamp, open: b.o, high: b.h, low: b.l, close: b.c });
   }, [q, tf]);
 
   // lignes de prix (entrée / stop / cible)
@@ -112,6 +115,7 @@ export function Chart({ symbol, tf, height = 420, lines = [], digits }: { symbol
         <b>{symbol}</b>
         <span className="muted">{tf}</span>
         {q && <span className={q.freshness === 'live' ? 'up' : 'warn'}>{price(q.mid, digits)}</span>}
+        {q && q.freshness === 'live' && q.lag_s != null && Math.abs(q.lag_s) > 10 && <span className="warn" title="Écart entre l’horodatage du fournisseur et la réception">source en retard de {Math.round(q.lag_s)} s</span>}
         {q && q.freshness !== 'live' && <span className="warn">données {q.freshness === 'closed' ? 'marché fermé' : `périmées (${age(q.age_s)})`}</span>}
       </div>
       <div ref={box} style={{ height }} />

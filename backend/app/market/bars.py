@@ -76,7 +76,13 @@ def merge(history: list[Bar], live: list[Bar], limit: int) -> list[Bar]:
     """Historique REST + bougies live (les bougies live l'emportent sur un même horodatage)."""
     by_ts = {b.ts: b for b in history}
     for b in live:
-        by_ts[b.ts] = b
+        h = by_ts.get(b.ts)
+        if h is not None:
+            # même bougie des deux côtés : l'historique connaît l'ouverture et les extrêmes depuis le début de la période
+            # (la bougie live ne couvre que le temps écoulé depuis le démarrage) ; le live apporte le dernier prix.
+            by_ts[b.ts] = Bar(ts=b.ts, o=h.o, h=max(h.h, b.h), l=min(h.l, b.l), c=b.c, v=max(h.v, b.v), closed=b.closed)
+        else:
+            by_ts[b.ts] = b
     return [by_ts[k] for k in sorted(by_ts)][-limit:]
 
 
