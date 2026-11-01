@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import delete
 
+from .. import settings_store
 from ..db import session_scope
 from ..market.provider import Bar
 from ..models import WatchItem, utcnow
@@ -21,6 +22,7 @@ from .base import Agent, AgentContext, AgentResult, params_of
 from .loader import load_skill
 
 LABELS_FR = {
+    "orb_short": "cassure à la baisse de la fourchette d'ouverture (vente à découvert)",
     "breakout_20d": "clôture au-dessus du plus haut des 20 dernières clôtures",
     "bull_flag": "drapeau haussier (hausse > 10 % puis 5 clôtures dans une fourchette < 5 %)",
     "reclaim_ma20": "reprise de la moyenne mobile 20 jours",
@@ -120,39 +122,58 @@ class ScannerAgent(Agent):
                 row["reasons"] += [LABELS_FR.get(s, s) for s in h["setups"]]
                 row["daily"] = {"rsi": h["rsi"], "close_date": h["close_date"]}
 
-        # -- étape 2 : opening-range breakout, par profil de session
+        # -- étape 2 : opening-range breakout, par profil de session (achat ; et vente à découvert si les interrupteurs le permettent)
         if want_orb and intraday:
             counts["orb"] = {}
             until = scan.parse_hhmm(p["no_entries_after"], "no_entries_after")
-            groups: dict[str, list[str]] = {"us_equity": [], "continuous": []}
-            for sym, (_, _, m, _) in intraday.items():
-                groups[m.profile].append(sym)
-            for profile, syms in groups.items():
-                if not syms:
-                    continue
-                m0 = intraday[syms[0]][2]
-                try:
-                    day, cutoff = scan.orb_window(m0.fake_utc(now), None, int(p["or_minutes"]), until)
-                except scan.ScanError as e:
-                    counts["orb"][profile] = {"scanned": 0, "note": str(e)}
-                    continue
-                stage1 = {s: intraday[s][0] for s in syms}
-                o_hits, o_counts, o_failed = scan.scan_orb(stage1, syms, day, cutoff, int(p["or_minutes"]), 0.0, 0)
-                counts["orb"][profile] = o_counts
-                for s, why in o_failed.items():
-                    failures[s] = why
-                for h in o_hits:
-                    _, v, m, _ = intraday[h["symbol"]]
-                    row = hit(h["symbol"])
-                    start_wall = dt.datetime.combine(day, dt.datetime.strptime(h["bar_start"], "%H:%M").time())
-                    closes_real = m.wall_to_real(start_wall + dt.timedelta(minutes=5))
-                    row["setups"].append("orb")
-                    row["reasons"].append(f"{LABELS_FR['orb']} : clôture {v.rp(h['price']):.{v.digits}f} au-dessus de {v.rp(h['or_high']):.{v.digits}f} "
-                                          f"(+{h['pct_over']:.2f} %)")
-                    row["orb"] = {"price": v.rp(h["price"]), "or_high": v.rp(h["or_high"]), "or_low": v.rp(h["or_low"]), "pct_over": h["pct_over"],
-                                  "closes_at": closes_real.isoformat() + "Z", "bar_index": h["bar_index"]}
+            passes = [("buy", intraday)]
+            if "sell" in settings_store.trade_directions():
+                short_series: dict[str, tuple[dict, Virtual, SessionMapper, list[Bar]]] = {}
+                for sym, (_, _, m, b5) in intraday.items():
+                    try:
+                        _, vs, _ = ctx.virtual(sym, "sell")  # prix en miroir : une cassure à la baisse devient une cassure à la hausse
+                    except ValueError:
+                        continue
+                    short_series[sym] = (scan_series(to_virtual_bars(b5, vs, m, only_closed=False)), vs, m, b5)
+                passes.append(("sell", short_series))
+            for side, series in passes:
+                groups: dict[str, list[str]] = {"us_equity": [], "continuous": []}
+                for sym, (_, _, m, _) in series.items():
+                    groups[m.profile].append(sym)
+                for profile, syms in groups.items():
+                    if not syms:
+                        continue
+                    m0 = series[syms[0]][2]
+                    key = profile if side == "buy" else f"{profile}_vente"
+                    try:
+                        day, cutoff = scan.orb_window(m0.fake_utc(now), None, int(p["or_minutes"]), until)
+                    except scan.ScanError as e:
+                        counts["orb"][key] = {"scanned": 0, "note": str(e)}
+                        continue
+                    stage1 = {s_: series[s_][0] for s_ in syms}
+                    o_hits, o_counts, o_failed = scan.scan_orb(stage1, syms, day, cutoff, int(p["or_minutes"]), 0.0, 0)
+                    counts["orb"][key] = o_counts
+                    for s_, why in o_failed.items():
+                        failures[s_] = why
+                    for h in o_hits:
+                        _, v, m, _ = series[h["symbol"]]
+                        row = hit(h["symbol"])
+                        start_wall = dt.datetime.combine(day, dt.datetime.strptime(h["bar_start"], "%H:%M").time())
+                        closes_real = m.wall_to_real(start_wall + dt.timedelta(minutes=5))
+                        if side == "buy":
+                            row["setups"].append("orb")
+                            row["reasons"].append(f"{LABELS_FR['orb']} : clôture {v.rp(h['price']):.{v.digits}f} au-dessus de {v.rp(h['or_high']):.{v.digits}f} "
+                                                  f"(+{h['pct_over']:.2f} %)")
+                            row["orb"] = {"price": v.rp(h["price"]), "or_high": v.rp(h["or_high"]), "or_low": v.rp(h["or_low"]), "pct_over": h["pct_over"],
+                                          "closes_at": closes_real.isoformat() + "Z", "bar_index": h["bar_index"]}
+                        else:
+                            row["setups"].append("orb_short")
+                            row["reasons"].append(f"{LABELS_FR['orb_short']} : clôture {v.rp(h['price']):.{v.digits}f} sous {v.rp(h['or_high']):.{v.digits}f} "
+                                                  f"(-{h['pct_over']:.2f} %)")
+                            row["orb_short"] = {"price": v.rp(h["price"]), "or_low": v.rp(h["or_high"]), "or_high": v.rp(h["or_low"]), "pct_over": h["pct_over"],
+                                                "closes_at": closes_real.isoformat() + "Z", "bar_index": h["bar_index"]}
 
-        out_hits = sorted(hits.values(), key=lambda h: (-("orb" in h["setups"]), -len(h["setups"]), h["symbol"]))
+        out_hits = sorted(hits.values(), key=lambda h: (-("orb" in h["setups"] or "orb_short" in h["setups"]), -len(h["setups"]), h["symbol"]))
         counts["hits"] = len(out_hits)
         if failures:
             warnings.append(f"{len(failures)} instrument(s) non scannés (données manquantes ou erreur) — scan partiel, jamais « tout le marché ».")

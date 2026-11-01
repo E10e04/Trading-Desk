@@ -53,8 +53,9 @@ class TimeMachineAgent(Agent):
         if not plan:
             return AgentResult("skipped", "Aucun plan à simuler (Agent Exit requis).", {})
         symbol = (symbol or plan["symbol"]).upper()
+        side = "sell" if str(plan.get("side", "buy")).lower() in ("sell", "short") else "buy"
         try:
-            inst, v, m = ctx.virtual(symbol)
+            inst, v, m = ctx.virtual(symbol, side)
         except (KeyError, ValueError) as ex:
             return AgentResult("error", f"{symbol} : {ex}", {"symbol": symbol}, instrument=symbol)
         bars = await ctx.feed.get_bars(symbol, "5m", int(p["bars_limit"]))

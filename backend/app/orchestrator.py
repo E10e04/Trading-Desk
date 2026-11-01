@@ -334,25 +334,41 @@ class Orchestrator:
         cid = uuid.uuid4().hex[:16]
         results: dict[str, AgentResult] = {}
         self.counters["entries_checked"] += 1
-        targets = self._targets()
-        sp = targets[0][1] if targets else {}
-        entry = await self.run_agent("entry", trigger, cid, results, overrides={k: sp[k] for k in ("or_minutes", "no_entries_before", "no_entries_after") if k in sp},
-                                     symbol=symbol, setup=setup or sp.get("setup"), level=level)
-        results["entry"] = entry
-        if entry.output.get("status") != "triggered":
-            return []
-        self.counters["signals"] += 1
-        key = entry.output["signal_key"]
-        out = []
-        news_res = await self._news_for(symbol, cid, results)
-        for pid, params in targets:
-            dedupe = f"{key}|{pid}"
-            if dedupe in self._processed or self._proposal_exists(dedupe):
+        all_targets = self._targets()
+        out: list[dict] = []
+        for side in self.directions():
+            # vente à découvert : seuls les portefeuilles qui l'ont activée participent (en plus du réglage global)
+            targets = [(pid, prm) for pid, prm in all_targets if side == "buy" or self._portfolio_allows_short(pid)]
+            if not targets:
                 continue
-            self._processed.add(dedupe)
-            async with self._chain_sem:
-                out.append(await self.run_chain(symbol, pid, dict(results), cid, params, dedupe, news_res))
+            sp = targets[0][1]
+            res_side: dict[str, AgentResult] = dict(results)
+            entry = await self.run_agent("entry", trigger, cid, res_side, overrides={k: sp[k] for k in ("or_minutes", "no_entries_before", "no_entries_after") if k in sp},
+                                         symbol=symbol, setup=setup or sp.get("setup"), level=level, side=side)
+            res_side["entry"] = entry
+            if entry.output.get("status") != "triggered":
+                continue
+            self.counters["signals"] += 1
+            key = entry.output["signal_key"]
+            news_res = await self._news_for(symbol, cid, res_side)
+            for pid, params in targets:
+                dedupe = f"{key}|{pid}"
+                if dedupe in self._processed or self._proposal_exists(dedupe):
+                    continue
+                self._processed.add(dedupe)
+                async with self._chain_sem:
+                    out.append(await self.run_chain(symbol, pid, dict(res_side), cid, params, dedupe, news_res))
         return out
+
+    @staticmethod
+    def directions() -> list[str]:
+        return settings_store.trade_directions()
+
+    @staticmethod
+    def _portfolio_allows_short(pid: int) -> bool:
+        with session_scope() as s:
+            p = s.get(Portfolio, pid)
+            return bool(p and (p.risk or {}).get("allow_short"))
 
     async def _news_for(self, symbol: str, cid: str, results: dict[str, AgentResult]) -> AgentResult | None:
         cfg = self.config("news")
@@ -381,7 +397,7 @@ class Orchestrator:
         prop_id = self._new_proposal(symbol, pid, entry, params, cid, dedupe)
         try:
             xr = await self.run_agent("exit", "pipeline", cid, results, overrides=ov, symbol=symbol, entry=trig["price"], opening_range=entry.output.get("opening_range"),
-                                      setup=entry.output["setup"], entry_time=trig["closes_at"])
+                                      setup=entry.output["setup"], entry_time=trig["closes_at"], side=entry.output.get("side", "buy"))
             results["exit"] = xr
             if xr.status != "ok":
                 return self._finish_proposal(prop_id, "rejected", f"plan impossible : {xr.summary}", plan=xr.output)
@@ -471,7 +487,7 @@ class Orchestrator:
     # ------------------------------------------------------------------ propositions
     def _new_proposal(self, symbol: str, pid: int, entry: AgentResult, params: dict, cid: str, dedupe: str) -> int:
         with session_scope() as s:
-            p = Proposal(portfolio_id=pid, symbol=symbol, side="buy", setup=entry.output.get("setup", "orb"), kind="entry", status="pending",
+            p = Proposal(portfolio_id=pid, symbol=symbol, side=entry.output.get("side", "buy"), setup=entry.output.get("setup", "orb"), kind="entry", status="pending",
                          source_agent="entry", strategy_id=params.get("strategy_id"), correlation_id=cid,
                          plan={}, sizing={}, risk={}, context={"signal_key": dedupe, "signal": jsonable(entry.output, 20_000)}, decision="auto")
             s.add(p)

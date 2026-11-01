@@ -39,11 +39,17 @@ class Virtual:
     lot: float  # taille d'une « action virtuelle » en unités de base
     fx: float  # taux de la devise de cotation vers l'USD
     digits: int
+    mirror: float = 0.0  # > 0 : vente à découvert. Prix « en miroir » (mirror − prix) : une baisse réelle devient une hausse virtuelle,
+    #                       ce qui permet d'appliquer les skills d'origine (achat uniquement) sans les modifier.
 
     def vp(self, price: float) -> float:
+        if self.mirror:
+            return (self.mirror - price) * self.fx * self.lot
         return price * self.fx * self.lot
 
     def rp(self, vprice: float) -> float:
+        if self.mirror:
+            return round(self.mirror - vprice / (self.fx * self.lot), self.digits + 1)
         return round(vprice / (self.fx * self.lot), self.digits + 1)
 
     def vq(self, qty: float) -> float:
@@ -59,7 +65,7 @@ class Virtual:
 MIN_VIRTUAL_PRICE = 300.0  # le centime d'une « action virtuelle » doit rester fin devant le prix (précision >= ~3e-6)
 
 
-def make_virtual(inst: Instrument, fx: float | None, ref_price: float | None = None) -> Virtual:
+def make_virtual(inst: Instrument, fx: float | None, ref_price: float | None = None, side: str = "buy") -> Virtual:
     """Lot virtuel. Actions : lot = 1 (comportement exact du skill). Autres classes : lot = pas de quantité x 10^k,
     k le plus petit entier tel que le prix virtuel dépasse ~300 USD, pour que l'arrondi au centime reste négligeable
     (ex. BTC : 0,01 BTC ; or : 1 once ; EURUSD : 1 000 unités)."""
@@ -73,7 +79,12 @@ def make_virtual(inst: Instrument, fx: float | None, ref_price: float | None = N
         while vp * 10 ** k < MIN_VIRTUAL_PRICE and k < 8:
             k += 1
         lot = step * 10 ** k
-    return Virtual(inst.symbol, lot, float(fx), inst.digits or 5)
+    mirror = 0.0
+    if side in ("sell", "short"):
+        if not ref_price or ref_price <= 0:
+            raise ValueError(f"aucun prix de référence pour {inst.symbol} : vente à découvert impossible à évaluer")
+        mirror = 2.0 * float(ref_price)  # tous les prix du jour restent dans ]0 ; 2 x référence[ : le miroir reste positif
+    return Virtual(inst.symbol, lot, float(fx), inst.digits or 5, mirror)
 
 
 # ----------------------------------------------------------------------------- session mappée
@@ -144,7 +155,8 @@ def to_virtual_bars(bars: list[Bar], v: Virtual, m: SessionMapper, only_closed: 
     for b in bars:
         if only_closed and not b.closed:
             continue
-        out.append({"t": m.fake_ts(b.ts), "o": v.vp(b.o), "h": v.vp(b.h), "l": v.vp(b.l), "c": v.vp(b.c), "v": int(b.v or 0)})
+        hi, lo = (v.vp(b.l), v.vp(b.h)) if v.mirror else (v.vp(b.h), v.vp(b.l))  # le plus haut du miroir est le plus bas réel
+        out.append({"t": m.fake_ts(b.ts), "o": v.vp(b.o), "h": hi, "l": lo, "c": v.vp(b.c), "v": int(b.v or 0)})
     return out
 
 

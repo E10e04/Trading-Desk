@@ -2,7 +2,7 @@
 
 Comptabilité de type CFD :
     solde (balance) = capital initial + P&L réalisé - frais
-    equity          = solde + P&L latent (positions valorisées au bid, longues uniquement)
+    equity          = solde + P&L latent (positions longues valorisées au bid, à découvert à l'ask)
     marge utilisée  = somme(|qté| x prix x taux USD / levier)
     marge libre     = equity - marge utilisée
 
@@ -11,7 +11,8 @@ Règles clés (déterministes, aucune IA) :
   * achat au ask, vente au bid (spread estimé si bid/ask absents) + slippage + commission ;
   * stop : se déclenche puis s'exécute au marché => peut s'exécuter PIRE que le prix du stop (écart modélisé) ;
   * limite : exécutée au prix limite ou mieux ;
-  * longues uniquement (comme les skills) ; pas de levier au-delà de celui du portefeuille.
+  * positions longues, et à découvert (quantité négative) si l'interrupteur global ET celui du portefeuille sont activés ;
+    pas de levier au-delà de celui du portefeuille.
 Chaque étape est écrite dans le journal append-only (`ledger`) : `replay_from_fills` reconstitue l'état.
 """
 from __future__ import annotations
@@ -25,7 +26,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .. import settings_store
 from ..bus import EventBus
@@ -46,6 +47,7 @@ RISK_DEFAULTS: dict[str, Any] = {
     "max_loss_per_trade_usd": 50, "max_daily_loss_usd": 150, "max_trades_per_day": 3, "max_orders_per_day": 10,
     "min_reward_risk": 1.0, "require_stop": True, "blocked": [], "pdt_guard": False,
     "gate_manual": False,  # appliquer aussi le skill Risk aux ordres saisis à la main
+    "allow_short": False,  # vente à découvert : interrupteur du portefeuille (il faut aussi le réglage global « allow_short »)
     "max_exposure_pct": 300,  # exposition brute max / equity (règle backend supplémentaire)
 }
 
@@ -111,7 +113,7 @@ class PaperEngine:
             self._pos_symbols.clear()
             for o in s.scalars(select(Order).where(Order.status.in_(("open", "triggered")))):
                 self._open.setdefault(o.symbol, set()).add(o.id)
-            for p in s.scalars(select(Position).where(Position.qty > EPS)):
+            for p in s.scalars(select(Position).where(func.abs(Position.qty) > EPS)):
                 self._pos_symbols.setdefault(p.symbol, set()).add(p.portfolio_id)
 
     # ------------------------------------------------------------------ portefeuilles
@@ -187,7 +189,7 @@ class PaperEngine:
             p = s.get(Portfolio, pid)
             if not p:
                 raise KeyError("portefeuille introuvable")
-            positions = list(s.scalars(select(Position).where(Position.portfolio_id == pid, Position.qty > EPS)))
+            positions = list(s.scalars(select(Position).where(Position.portfolio_id == pid, func.abs(Position.qty) > EPS)))
             n_open = len(list(s.scalars(select(Order.id).where(Order.portfolio_id == pid, Order.status.in_(("open", "triggered"))))))
             pos_views, unreal, margin, gross, incomplete = [], 0.0, 0.0, 0.0, False
             for pos in positions:
@@ -219,14 +221,15 @@ class PaperEngine:
         mark = None
         fresh = self.feed.freshness(pos.symbol)
         if q:
-            bid, _, _ = self._est_bid_ask(q)
-            mark = bid
+            bid, ask, _ = self._est_bid_ask(q)
+            mark = ask if pos.qty < 0 else bid  # une position à découvert se rachète à l'ask
         unreal = (mark - pos.avg_price) * pos.qty * fx if (mark is not None and fx is not None) else None
-        notional = pos.qty * mark * fx if (mark is not None and fx is not None) else None
+        notional = abs(pos.qty) * mark * fx if (mark is not None and fx is not None) else None
         return {
             "id": pos.id, "portfolio_id": pos.portfolio_id, "symbol": pos.symbol, "qty": pos.qty, "avg_price": pos.avg_price,
             "mark": mark, "fx_to_usd": fx, "unrealized_pnl": round(unreal, 2) if unreal is not None else None,
-            "unrealized_pct": round((mark / pos.avg_price - 1) * 100, 3) if mark is not None and pos.avg_price else None,
+            "unrealized_pct": round((mark / pos.avg_price - 1) * 100 * (-1 if pos.qty < 0 else 1), 3) if mark is not None and pos.avg_price else None,
+            "side": "short" if pos.qty < 0 else "long",
             "notional_usd": round(notional, 2) if notional is not None else None,
             "margin_usd": round(notional / leverage, 2) if notional is not None else None,
             "realized_pnl": round(pos.realized_pnl, 2), "fees_paid": round(pos.fees_paid, 2), "plan": pos.plan or {},
@@ -264,20 +267,30 @@ class PaperEngine:
                 why.append(f"{name} non applicable à un ordre {typ}")
         if why:
             return why
-        if side == "sell":
-            pos = s.scalar(select(Position).where(Position.portfolio_id == p.id, Position.symbol == sym))
-            held = pos.qty if pos else 0.0
-            if req.role in ("stop_loss", "take_profit"):
-                if qty > held + EPS:
-                    why.append(f"vente protectrice de {qty} > position détenue {held}")
+        pos = s.scalar(select(Position).where(Position.portfolio_id == p.id, Position.symbol == sym))
+        held = pos.qty if pos else 0.0
+        protective = req.role in ("stop_loss", "take_profit")
+        reduces = (side == "sell" and held > EPS) or (side == "buy" and held < -EPS) or (protective and abs(held) > EPS)
+        if protective and not ((side == "sell" and held > EPS) or (side == "buy" and held < -EPS)):
+            why.append("protection sans position à protéger dans ce sens")
+            return why
+        if reduces:
+            # on ne fait que réduire la position existante : jamais de retournement d'un coup
+            if protective:
+                if qty > abs(held) + EPS:
+                    why.append(f"ordre protecteur de {qty} > position détenue {abs(held)}")
             else:
                 pending = sum(o.qty - o.filled_qty for o in s.scalars(select(Order).where(
-                    Order.portfolio_id == p.id, Order.symbol == sym, Order.side == "sell", Order.status.in_(("open", "triggered")),
+                    Order.portfolio_id == p.id, Order.symbol == sym, Order.side == side, Order.status.in_(("open", "triggered")),
                     Order.role == "standalone")))
-                if qty > held - pending + EPS:
-                    why.append(f"vente à découvert interdite : position {held}, déjà en ordres de vente {pending}, demandé {qty}")
+                if qty > abs(held) - pending + EPS:
+                    why.append(f"vente à découvert interdite : position {held}, déjà en ordres de vente {pending}, demandé {qty}" if side == "sell"
+                               else f"rachat de {qty} > position à découvert {abs(held)} (déjà en ordres : {pending})")
             return why
-        # achat
+        if side == "sell" and not self._short_allowed(p):
+            why.append("vente à découvert interdite : activez-la dans Réglages (interrupteur global et portefeuille)")
+            return why
+        # ouverture ou renforcement (achat, ou vente à découvert autorisée) : contrôle de marge
         if req.role == "standalone" or req.role == "entry":
             if q is None:
                 why.append(f"aucune cotation pour {sym}")
@@ -288,9 +301,13 @@ class PaperEngine:
                 return why
             ref = _fin(req.limit_price) or _fin(req.stop_price) or q.mid
             summary_free = self._free_margin(s, p)
-            reserved = sum(self._margin_of(o.qty - o.filled_qty, o.limit_price or o.stop_price or ref, self._fx(o.symbol) or fx, p.leverage)
-                           for o in s.scalars(select(Order).where(Order.portfolio_id == p.id, Order.side == "buy",
-                                                                  Order.status.in_(("open", "triggered")))))
+            reserved = 0.0
+            for o in s.scalars(select(Order).where(Order.portfolio_id == p.id, Order.status.in_(("open", "triggered")),
+                                                   Order.role.in_(("standalone", "entry")))):
+                op = s.scalar(select(Position).where(Position.portfolio_id == p.id, Position.symbol == o.symbol))
+                oh = op.qty if op else 0.0
+                if (o.side == "buy" and oh >= -EPS) or (o.side == "sell" and oh <= EPS):  # ordre qui ouvre ou renforce
+                    reserved += self._margin_of(o.qty - o.filled_qty, o.limit_price or o.stop_price or ref, self._fx(o.symbol) or fx, p.leverage)
             need = self._margin_of(qty, ref, fx, p.leverage) + qty * ref * fx * p.commission_bps / 1e4
             if need > summary_free - reserved + 1e-6:
                 why.append(f"marge insuffisante : requis {need:.2f} USD, disponible {max(summary_free - reserved, 0):.2f} USD")
@@ -303,28 +320,33 @@ class PaperEngine:
         return why
 
     @staticmethod
+    def _short_allowed(p: Portfolio) -> bool:
+        """Vente à découvert : il faut l'interrupteur global (Réglages) ET celui du portefeuille."""
+        return bool(settings_store.get("allow_short")) and bool((p.risk or {}).get("allow_short"))
+
+    @staticmethod
     def _margin_of(qty: float, price: float, fx: float, leverage: float) -> float:
         return abs(qty) * price * fx / leverage
 
     def _unrealized(self, s, p: Portfolio) -> float:
         tot = 0.0
-        for pos in s.scalars(select(Position).where(Position.portfolio_id == p.id, Position.qty > EPS)):
+        for pos in s.scalars(select(Position).where(Position.portfolio_id == p.id, func.abs(Position.qty) > EPS)):
             v = self._position_view(pos, p.leverage)
             tot += v["unrealized_pnl"] or 0.0
         return tot
 
     def _gross_exposure(self, s, p: Portfolio) -> float:
         tot = 0.0
-        for pos in s.scalars(select(Position).where(Position.portfolio_id == p.id, Position.qty > EPS)):
+        for pos in s.scalars(select(Position).where(Position.portfolio_id == p.id, func.abs(Position.qty) > EPS)):
             v = self._position_view(pos, p.leverage)
-            tot += v["notional_usd"] or (pos.qty * pos.avg_price * (self._fx(pos.symbol) or 1.0))
+            tot += v["notional_usd"] or (abs(pos.qty) * pos.avg_price * (self._fx(pos.symbol) or 1.0))
         return tot
 
     def _free_margin(self, s, p: Portfolio) -> float:
         used = 0.0
-        for pos in s.scalars(select(Position).where(Position.portfolio_id == p.id, Position.qty > EPS)):
+        for pos in s.scalars(select(Position).where(Position.portfolio_id == p.id, func.abs(Position.qty) > EPS)):
             v = self._position_view(pos, p.leverage)
-            used += v["margin_usd"] if v["margin_usd"] is not None else pos.qty * pos.avg_price * (self._fx(pos.symbol) or 1.0) / p.leverage
+            used += v["margin_usd"] if v["margin_usd"] is not None else abs(pos.qty) * pos.avg_price * (self._fx(pos.symbol) or 1.0) / p.leverage
         return p.balance + self._unrealized(s, p) - used
 
     # ------------------------------------------------------------------ passage d'ordres
@@ -393,17 +415,18 @@ class PaperEngine:
     def close_position(self, pid: int, symbol: str, source: str = "manual") -> dict:
         symbol = symbol.upper()
         with self._lock, session_scope() as s:
-            pos = s.scalar(select(Position).where(Position.portfolio_id == pid, Position.symbol == symbol, Position.qty > EPS))
+            pos = s.scalar(select(Position).where(Position.portfolio_id == pid, Position.symbol == symbol, func.abs(Position.qty) > EPS))
             if not pos:
                 raise KeyError(f"aucune position ouverte sur {symbol}")
-            qty = pos.qty
-            # on libère les ordres de vente protecteurs avant de clôturer
+            qty = abs(pos.qty)
+            closing_side = "sell" if pos.qty > 0 else "buy"  # une position à découvert se clôture par un rachat
+            # on libère les ordres de sortie en attente avant de clôturer
             events: list[tuple[str, Any]] = []
-            for o in s.scalars(select(Order).where(Order.portfolio_id == pid, Order.symbol == symbol, Order.side == "sell",
+            for o in s.scalars(select(Order).where(Order.portfolio_id == pid, Order.symbol == symbol, Order.side == closing_side,
                                                    Order.status.in_(("open", "triggered")))):
                 self._cancel(s, o, "position clôturée", events)
         self._publish(events)
-        return self.place_order(OrderRequest(portfolio_id=pid, symbol=symbol, side="sell", type="market", qty=qty, source=source))
+        return self.place_order(OrderRequest(portfolio_id=pid, symbol=symbol, side=closing_side, type="market", qty=qty, source=source))
 
     # ------------------------------------------------------------------ cotations -> déclenchements
     async def on_quote(self, q: Quote) -> None:
@@ -484,18 +507,21 @@ class PaperEngine:
             pos = Position(portfolio_id=p.id, symbol=o.symbol, qty=0.0, avg_price=0.0)
             s.add(pos)
             s.flush()
-        if buy:
-            new_qty = pos.qty + qty
-            pos.avg_price = (pos.avg_price * pos.qty + price * qty) / new_qty
-            if pos.qty <= EPS:
+        old = pos.qty
+        was_flat = abs(old) <= EPS
+        opening = was_flat or (old > 0) == buy  # ouvre ou renforce (long si achat, à découvert si vente)
+        if opening:
+            new_qty = old + (qty if buy else -qty)
+            pos.avg_price = (pos.avg_price * abs(old) + price * qty) / abs(new_qty)
+            if was_flat:
                 pos.opened_at = utcnow()
                 pos.plan = o.meta.get("plan") or pos.plan or {}
             pos.qty = new_qty
         else:
-            sell_qty = min(qty, pos.qty)
-            realized = (price - pos.avg_price) * sell_qty * fx
-            pos.qty = pos.qty - sell_qty
-            if pos.qty <= EPS:
+            closed = min(qty, abs(old))
+            realized = (price - pos.avg_price) * closed * fx * (1 if old > 0 else -1)
+            pos.qty = old - closed if old > 0 else old + closed
+            if abs(pos.qty) <= EPS:
                 pos.qty, pos.avg_price, pos.opened_at, pos.plan = 0.0, 0.0, None, {}
         net = realized - fee
         pos.realized_pnl += net
@@ -512,9 +538,10 @@ class PaperEngine:
         self._ledger(s, p.id, "order_filled", o.id, {"symbol": o.symbol, "side": o.side, "qty": qty, "price": price, "fee": round(fee, 6),
                                                       "fx": fx, "bid": q.bid, "ask": q.ask, "spread_estimated": est,
                                                       "realized_net": round(net, 6)})
-        kind = "position_closed" if pos.qty <= EPS else ("position_opened" if buy and abs(pos.qty - qty) < EPS else "position_changed")
+        flat = abs(pos.qty) <= EPS
+        kind = "position_closed" if flat else ("position_opened" if was_flat else "position_changed")
         self._ledger(s, p.id, kind, pos.id, {"symbol": o.symbol, "qty": pos.qty, "avg_price": pos.avg_price})
-        if pos.qty > EPS:
+        if not flat:
             self._pos_symbols.setdefault(o.symbol, set()).add(p.id)
         else:
             self._pos_symbols.get(o.symbol, set()).discard(p.id)
@@ -524,19 +551,19 @@ class PaperEngine:
         if o.group_id:
             for sib in s.scalars(select(Order).where(Order.group_id == o.group_id, Order.id != o.id, Order.status.in_(("open", "triggered")))):
                 self._cancel(s, sib, "OCO : l'autre jambe a été exécutée", events)
-        if not buy and pos.qty <= EPS:
-            for orphan in s.scalars(select(Order).where(Order.portfolio_id == p.id, Order.symbol == o.symbol, Order.side == "sell",
+        if flat:
+            for orphan in s.scalars(select(Order).where(Order.portfolio_id == p.id, Order.symbol == o.symbol,
                                                         Order.role.in_(("stop_loss", "take_profit")), Order.status.in_(("open", "triggered")))):
                 self._cancel(s, orphan, "position soldée", events)
         # bracket : l'entrée exécutée crée ses jambes de protection
         br = (o.meta or {}).get("bracket")
-        if buy and br and o.role in ("standalone", "entry"):
+        if opening and br and o.role in ("standalone", "entry"):
             gid = uuid.uuid4().hex[:16]
             for role, typ, key in (("stop_loss", "stop", "stop_loss"), ("take_profit", "limit", "take_profit")):
                 px = br.get(key)
                 if not px:
                     continue
-                leg = Order(portfolio_id=p.id, symbol=o.symbol, side="sell", type=typ, qty=qty,
+                leg = Order(portfolio_id=p.id, symbol=o.symbol, side="sell" if buy else "buy", type=typ, qty=qty,
                             stop_price=round(px, digits) if typ == "stop" else None,
                             limit_price=round(px, digits) if typ == "limit" else None, tif="gtc", role=role,
                             parent_id=o.id, group_id=gid, source=o.source, proposal_id=o.proposal_id, status="open",
@@ -544,7 +571,7 @@ class PaperEngine:
                 s.add(leg)
                 s.flush()
                 self._open.setdefault(o.symbol, set()).add(leg.id)
-                self._ledger(s, p.id, "order_placed", leg.id, {"symbol": o.symbol, "side": "sell", "type": typ, "qty": qty, "role": role, "parent": o.id})
+                self._ledger(s, p.id, "order_placed", leg.id, {"symbol": o.symbol, "side": leg.side, "type": typ, "qty": qty, "role": role, "parent": o.id})
                 events.append(("order", self._order_view(leg)))
 
     def _cancel(self, s, o: Order, reason: str, events: list) -> None:
@@ -599,7 +626,7 @@ class PaperEngine:
 
     def list_positions(self, pid: int | None = None) -> list[dict]:
         with session_scope() as s:
-            stmt = select(Position).where(Position.qty > EPS)
+            stmt = select(Position).where(func.abs(Position.qty) > EPS)
             if pid:
                 stmt = stmt.where(Position.portfolio_id == pid)
             out = []
@@ -648,22 +675,23 @@ class PaperEngine:
             bal, qty, avg, fees, realized = p.initial_capital, {}, {}, 0.0, 0.0
             for f in s.scalars(select(Fill).where(Fill.portfolio_id == pid).order_by(Fill.id)):
                 q0, a0 = qty.get(f.symbol, 0.0), avg.get(f.symbol, 0.0)
-                if f.side == "buy":
-                    nq = q0 + f.qty
-                    avg[f.symbol] = (a0 * q0 + f.price * f.qty) / nq
+                is_buy = f.side == "buy"
+                if abs(q0) <= EPS or (q0 > 0) == is_buy:
+                    nq = q0 + (f.qty if is_buy else -f.qty)
+                    avg[f.symbol] = (a0 * abs(q0) + f.price * f.qty) / abs(nq)
                     qty[f.symbol] = nq
                     gross = 0.0
                 else:
-                    sq = min(f.qty, q0)
-                    gross = (f.price - a0) * sq * f.fx_rate
-                    qty[f.symbol] = q0 - sq
-                    if qty[f.symbol] <= EPS:
+                    closed = min(f.qty, abs(q0))
+                    gross = (f.price - a0) * closed * f.fx_rate * (1 if q0 > 0 else -1)
+                    qty[f.symbol] = q0 - closed if q0 > 0 else q0 + closed
+                    if abs(qty[f.symbol]) <= EPS:
                         qty[f.symbol], avg[f.symbol] = 0.0, 0.0
                 realized += gross
                 fees += f.fee
                 bal += gross - f.fee
-            stored = {pos.symbol: pos.qty for pos in s.scalars(select(Position).where(Position.portfolio_id == pid)) if pos.qty > EPS}
-            rebuilt = {k: v for k, v in qty.items() if v > EPS}
+            stored = {pos.symbol: pos.qty for pos in s.scalars(select(Position).where(Position.portfolio_id == pid)) if abs(pos.qty) > EPS}
+            rebuilt = {k: v for k, v in qty.items() if abs(v) > EPS}
             ok = (abs(bal - p.balance) < 1e-6 and abs(fees - p.fees_paid) < 1e-6 and abs(realized - p.realized_pnl) < 1e-6
                   and stored.keys() == rebuilt.keys() and all(abs(stored[k] - rebuilt[k]) < 1e-9 for k in stored))
             return {"consistent": ok, "balance_rebuilt": round(bal, 6), "balance_stored": round(p.balance, 6),

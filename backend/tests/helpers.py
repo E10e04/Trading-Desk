@@ -56,7 +56,7 @@ def random_session(start: dt.datetime, rng: random.Random, p0: float, vol: float
     return bars
 
 
-def orb_session(start: dt.datetime, base: float, n: int, up_at: int = 3, up_pct: float = 0.0015, rng: random.Random | None = None) -> list[Bar]:
+def orb_session(start: dt.datetime, base: float, n: int, up_at: int = 3, up_pct: float = 0.0015, rng: random.Random | None = None, down: bool = False) -> list[Bar]:
     """Séance du jour : fourchette plate sur 3 bougies puis clôture au-dessus du haut de la fourchette à la bougie `up_at`."""
     rng = rng or random.Random(5)
     bars = []
@@ -76,6 +76,9 @@ def orb_session(start: dt.datetime, base: float, n: int, up_at: int = 3, up_pct:
             h, l = max(o, c) * 1.0001, min(o, c) * 0.9999
         bars.append(Bar(ts=ts_of(start) + 300 * i, o=o, h=h, l=l, c=c, v=1))
         p = c
+    if down:  # séance en miroir autour du prix de base : cassure de la fourchette à la BAISSE
+        k = 2 * base
+        bars = [Bar(ts=b.ts, o=k - b.o, h=k - b.l, l=k - b.h, c=k - b.c, v=b.v) for b in bars]
     return bars
 
 
@@ -139,7 +142,7 @@ def make_world(symbols: dict[str, dict], *, today: dt.date, now_utc: dt.datetime
         st = session_start(today, prof, anchor)
         n_today = max(0, int((now_utc - st).total_seconds() // 300))
         if n_today:
-            day_bars = orb_session(st, p, 78, up_at=(orb or {}).get(sym, 3)) if (orb is None or sym in orb) else random_session(st, rng, p)
+            day_bars = orb_session(st, p, 78, up_at=(orb or {}).get(sym, 3), down=bool(spec.get("down"))) if (orb is None or sym in orb) else random_session(st, rng, p)
             allb += [b for b in day_bars[:n_today]]
         prov.hist[(sym, "5m")] = allb
         prov.hist[(sym, "1d")] = daily_from(allb)

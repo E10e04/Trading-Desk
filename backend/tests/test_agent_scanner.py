@@ -83,3 +83,20 @@ async def test_scanner_daily_setups_use_skill_find_setups(world):
     r = await ScannerAgent().run(ctx, symbols=["EURUSD"])
     h = {x["symbol"]: x for x in r.output["hits"]}["EURUSD"]
     assert "breakout_20d" in h["setups"] and h["daily"]["close_date"] == "2026-10-20"
+
+
+async def test_scanner_detecte_la_cassure_a_la_baisse_seulement_si_les_ventes_sont_autorisees(db, tmp_path):
+    settings_store.reset_cache()
+    feed, prov = make_world({"EURUSD": {"type": "forex", "price": 1.10, "down": True}, "XAUUSD": {"type": "metal", "price": 2400.0}},
+                            today=TODAY, now_utc=NOW, orb={"EURUSD": 3, "XAUUSD": 3})
+    ctx = make_ctx(feed, NOW, tmp_path)
+    r = await ScannerAgent().run(ctx, symbols=["EURUSD", "XAUUSD"], write_watchlist=False)
+    by = {h["symbol"]: h for h in r.output["hits"]}
+    assert "EURUSD" not in by and "orb" in by["XAUUSD"]["setups"]          # défaut : achats seulement
+    settings_store.update({"allow_short": True, "trade_direction": "both"})
+    r = await ScannerAgent().run(ctx, symbols=["EURUSD", "XAUUSD"], write_watchlist=False)
+    by = {h["symbol"]: h for h in r.output["hits"]}
+    assert "orb_short" in by["EURUSD"]["setups"] and "orb" not in by["EURUSD"]["setups"] and "orb" in by["XAUUSD"]["setups"]
+    s = by["EURUSD"]["orb_short"]
+    assert s["price"] < s["or_low"] < s["or_high"] and 1.0 < s["price"] < 1.2
+    assert any("à la baisse" in x for x in by["EURUSD"]["reasons"])

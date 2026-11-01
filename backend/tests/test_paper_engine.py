@@ -239,3 +239,70 @@ async def test_realized_pnl_never_counts_unfilled(env):
     eng.cancel_order(o["id"])
     with pytest.raises(ValueError):
         eng.cancel_order(o["id"])
+
+
+def allow_short(eng, pid, on=True, glob=True):
+    settings_store.update({"allow_short": glob})
+    eng.update_portfolio(pid, risk={"allow_short": on})
+
+
+async def test_vente_a_decouvert_refusee_par_defaut_et_sans_les_deux_interrupteurs(env):
+    feed, eng = env
+    pid = mk(eng, leverage=10, commission_bps=0, slippage_bps=0)
+    await tick(feed, "EURUSD", 1.1000, 1.1002)
+    req = lambda: OrderRequest(pid, "EURUSD", "sell", "market", 10_000)  # noqa: E731
+    assert eng.place_order(req())["status"] == "rejected"
+    allow_short(eng, pid, on=True, glob=False)   # portefeuille seul : insuffisant
+    assert eng.place_order(req())["status"] == "rejected"
+    allow_short(eng, pid, on=False, glob=True)   # global seul : insuffisant
+    assert eng.place_order(req())["status"] == "rejected"
+    assert not eng.portfolio_summary(pid)["positions"]
+
+
+async def test_vente_a_decouvert_gain_perte_marge_et_rachat(env):
+    feed, eng = env
+    pid = mk(eng, leverage=10, commission_bps=0, slippage_bps=0)
+    allow_short(eng, pid)
+    await tick(feed, "EURUSD", 1.1000, 1.1002)
+    o = eng.place_order(OrderRequest(pid, "EURUSD", "sell", "market", 10_000))
+    assert o["status"] == "filled" and o["avg_fill_price"] == 1.1000   # vente au bid
+    pos = eng.portfolio_summary(pid)["positions"][0]
+    assert pos["qty"] == -10_000 and pos["side"] == "short" and pos["margin_usd"] > 0
+    await tick(feed, "EURUSD", 1.0900, 1.0902)                      # le prix baisse : gain latent, valorisé à l'ask
+    pos = eng.portfolio_summary(pid)["positions"][0]
+    assert pos["unrealized_pnl"] == round((1.0902 - 1.1000) * -10_000, 2) and pos["unrealized_pnl"] > 0
+    r = eng.close_position(pid, "EURUSD")
+    assert r["side"] == "buy" and r["status"] == "filled"
+    s = eng.portfolio_summary(pid)
+    assert not s["positions"] and abs(s["realized_pnl"] - 98.0) < 0.01
+    assert eng.replay_from_fills(pid)["consistent"]
+
+
+async def test_vente_a_decouvert_stop_et_cible_inverses_oco(env):
+    feed, eng = env
+    pid = mk(eng, leverage=10, commission_bps=0, slippage_bps=0)
+    allow_short(eng, pid)
+    await tick(feed, "EURUSD", 1.1000, 1.1002)
+    o = eng.place_order(OrderRequest(pid, "EURUSD", "sell", "market", 10_000, stop_loss=1.1050, take_profit=1.0900, source="agent:entry"))
+    assert o["status"] == "filled"
+    legs = eng.list_orders(pid, "active")
+    assert {x["role"]: x["side"] for x in legs} == {"stop_loss": "buy", "take_profit": "buy"}
+    await tick(feed, "EURUSD", 1.1060, 1.1062)                      # le stop (au-dessus) se déclenche
+    allo = {x["role"]: x for x in eng.list_orders(pid)}
+    assert allo["stop_loss"]["status"] == "filled" and allo["take_profit"]["status"] == "cancelled"
+    s = eng.portfolio_summary(pid)
+    assert not s["positions"] and s["realized_pnl"] < 0
+    assert eng.replay_from_fills(pid)["consistent"]
+
+
+async def test_pas_de_retournement_d_un_coup_ni_rachat_excessif(env):
+    feed, eng = env
+    pid = mk(eng, leverage=10, commission_bps=0, slippage_bps=0)
+    allow_short(eng, pid)
+    await tick(feed, "EURUSD", 1.1000, 1.1002)
+    eng.place_order(OrderRequest(pid, "EURUSD", "buy", "market", 10_000))
+    assert eng.place_order(OrderRequest(pid, "EURUSD", "sell", "market", 20_000))["status"] == "rejected"   # retournement
+    eng.close_position(pid, "EURUSD")
+    eng.place_order(OrderRequest(pid, "EURUSD", "sell", "market", 10_000))
+    assert eng.place_order(OrderRequest(pid, "EURUSD", "buy", "market", 20_000))["status"] == "rejected"
+    assert eng.place_order(OrderRequest(pid, "EURUSD", "buy", "market", 10_000))["status"] == "filled"

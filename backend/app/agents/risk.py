@@ -65,6 +65,7 @@ class RiskAgent(Agent):
             return AgentResult("skipped", "Aucun dimensionnement à contrôler (Agent Budget requis).", {"verdict": "BLOCK", "reasons": ["aucune proposition dimensionnée"]})
         pid = int(portfolio_id if portfolio_id is not None else sizing.get("portfolio_id"))
         symbol = sizing["symbol"].upper()
+        side = "sell" if str(sizing.get("side", "buy")).lower() in ("sell", "short") else "buy"
         now = ctx.clock()
         backend: list[dict] = []
 
@@ -72,7 +73,7 @@ class RiskAgent(Agent):
             backend.append({"rule": name, "ok": ok, "detail": detail, "severity": severity})
 
         try:
-            inst, v, m = ctx.virtual(symbol)
+            inst, v, m = ctx.virtual(symbol, side)
             summ = ctx.engine.portfolio_summary(pid)
         except (KeyError, ValueError) as ex:
             return AgentResult("ok", f"{symbol} : BLOCK — {ex}", {"verdict": "BLOCK", "symbol": symbol, "reasons": [str(ex)], "backend_rules": []},
@@ -83,6 +84,9 @@ class RiskAgent(Agent):
 
         # ---------------- règles backend déterministes
         rule("kill_switch", not settings_store.get("kill_switch"), "interrupteur d'arrêt global actif" if settings_store.get("kill_switch") else "inactif")
+        if side == "sell":
+            allowed = bool(settings_store.get("allow_short")) and bool((summ.get("risk") or {}).get("allow_short"))
+            rule("vente_a_decouvert", allowed, "vente à découvert autorisée (réglage global et portefeuille)" if allowed else "vente à découvert non autorisée : activez l'interrupteur global (Réglages) et celui du portefeuille")
         rule("portefeuille_actif", bool(summ["active"]), "portefeuille désactivé" if not summ["active"] else "actif")
         max_age = float(settings_store.get("max_quote_age_s"))
         state = ctx.feed.states.get(symbol, q.market_state if q else "unknown")
@@ -135,7 +139,7 @@ class RiskAgent(Agent):
             positions, prices, times = [], {}, {}
             fake_now = m.fake_utc(now)
             if q:
-                prices[code] = v.vp(q.ask or q.mid)
+                prices[code] = v.vp((q.bid or q.mid) if side == "sell" else (q.ask or q.mid))
                 times[code] = fake_now - dt.timedelta(seconds=float(fresh["age_s"] or 0))
             for hp in open_pos:
                 try:
@@ -144,7 +148,7 @@ class RiskAgent(Agent):
                     warnings.append(f"position {hp['symbol']} non valorisable (taux USD manquant)")
                     continue
                 hc = code_of(hp["symbol"])
-                positions.append({"ticker": hc, "shares": hv.vq(hp["qty"])})
+                positions.append({"ticker": hc, "shares": hv.vq(abs(hp["qty"]))})
                 if hp.get("mark") is not None:
                     prices[hc] = hv.vp(hp["mark"])
             cash = max(float(summ["free_margin"]), 0.0) * float(summ["leverage"])
@@ -174,7 +178,7 @@ class RiskAgent(Agent):
         backend_blocks = [b for b in backend if not b["ok"] and b["severity"] == "block"]
         reasons += [f"backend/{b['rule']} : {b['detail']}" for b in backend_blocks]
         verdict = "BLOCK" if reasons else "PASS"
-        out = {"verdict": verdict, "symbol": symbol, "portfolio_id": pid, "reasons": reasons, "warnings": warnings, "info": info,
+        out = {"verdict": verdict, "symbol": symbol, "side": side, "portfolio_id": pid, "reasons": reasons, "warnings": warnings, "info": info,
                "max_loss": max_loss, "reward_risk": rr, "fingerprint": fingerprint, "backend_rules": backend, "skill_result": skill_res,
                "checked_order": order, "spread_bps": spread_bps}
         why = "; ".join(reasons[:2])
@@ -187,7 +191,7 @@ class RiskAgent(Agent):
         today0 = dt.datetime(now.year, now.month, now.day)
         out = []
         with session_scope() as s:
-            for o in s.scalars(select(Order).where(Order.portfolio_id == pid, Order.created_at >= today0, Order.side == "buy",
+            for o in s.scalars(select(Order).where(Order.portfolio_id == pid, Order.created_at >= today0,
                                                     Order.role.in_(("entry", "standalone")))):
                 if o.status in ("rejected", "cancelled"):
                     continue

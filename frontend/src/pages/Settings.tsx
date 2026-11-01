@@ -45,7 +45,7 @@ export default function Settings() {
       <Async state={st}>
         {(d) => (
           <>
-            {tab === 'exec' && <Exec vals={d.values} save={save} />}
+            {tab === 'exec' && <><Exec vals={d.values} save={save} /><ShortSelling vals={d.values} save={save} /></>}
             {tab === 'data' && <Data vals={d.values} save={save} />}
             {tab === 'ai' && <AI vals={d.values} save={save} />}
             {tab === 'watch' && <Watch vals={d.values} save={save} />}
@@ -69,6 +69,39 @@ function Exec({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void
       <Row title="Écart TimeMachine minimal" hint="Vide = informatif. Sinon Risk bloque si la cible n’est pas favorisée d’au moins cet écart (0 : la cible doit être favorisée)."><NumberSetting k="timemachine_min_edge" vals={vals} save={save} nullable /></Row>
       <Row title="Bloquer sur halte de cotation (News)" hint="Une halte signalée par l’Agent News empêche l’entrée."><Switch checked={!!vals.news_block_on_halt} onChange={(v) => save({ news_block_on_halt: v })} label="Bloquer sur halte" /></Row>
       {kill && <Confirm title="Activer l’interrupteur d’arrêt ?" danger confirmLabel="Activer" message="Aucune nouvelle position automatique ne sera ouverte." onConfirm={() => save({ kill_switch: true })} onClose={() => setKill(false)} />}
+    </Panel>
+  );
+}
+
+function ShortSelling({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }) {
+  const toast = useToast();
+  const pf = useApi<{ items: { id: number; name: string; active: boolean; risk?: { allow_short?: boolean } }[] }>('/api/portfolios', 0);
+  const [ask, setAsk] = useState(false);
+  const on = !!vals.allow_short;
+  const dir = (vals.trade_direction as string) || 'long';
+  const setPortfolio = async (id: number, v: boolean) => {
+    try { await api(`/api/portfolios/${id}`, { method: 'PATCH', body: { risk: { allow_short: v } } }); pf.reload(); toast('success', v ? 'Ventes à découvert activées pour ce portefeuille' : 'Ventes à découvert désactivées pour ce portefeuille'); }
+    catch (e) { toast('error', 'Modification impossible', (e as Error).message); }
+  };
+  return (
+    <Panel title="Ventes à découvert (paper trading)">
+      <Banner kind="info">Par défaut, les agents n’achètent que sur cassure à la hausse. Pour vendre sur cassure à la baisse, activez l’interrupteur global, celui du portefeuille, puis choisissez le sens. Tant qu’un des trois manque, rien ne change.</Banner>
+      <Row title="1. Autoriser les ventes à découvert (global)" hint="Interrupteur général. Désactivé : aucun ordre de vente à découvert n’est évalué ni pris. Les positions à découvert déjà ouvertes restent gérées jusqu’à leur stop, leur cible ou leur clôture.">
+        <Switch checked={on} onChange={(v) => (v ? setAsk(true) : save({ allow_short: false }, 'Ventes à découvert désactivées'))} label="Ventes à découvert (global)" />
+      </Row>
+      <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+        <b>2. Portefeuilles autorisés</b>
+        <div className="muted">Le portefeuille doit aussi avoir l’interrupteur activé.</div>
+        <Async state={pf}>{(d) => d.items.length ? <div className="stack" style={{ marginTop: 8 }}>{d.items.map((p) => (
+          <div key={p.id} className="row between"><span>{p.name}{!p.active && <span className="muted"> (inactif)</span>}</span>
+            <Switch checked={!!p.risk?.allow_short} onChange={(v) => setPortfolio(p.id, v)} label={`Ventes à découvert : ${p.name}`} /></div>))}</div>
+          : <div className="muted" style={{ marginTop: 8 }}>Aucun portefeuille : créez-en un dans Portefeuilles.</div>}</Async>
+      </div>
+      <Row title="3. Sens des signaux" hint="Achats seulement (comportement actuel), ventes seulement, ou les deux. Les ventes ne sont évaluées que si les interrupteurs 1 et 2 sont activés.">
+        <Segmented label="Sens des signaux" value={dir} onChange={(v) => save({ trade_direction: v }, 'Sens des signaux enregistré')} options={[{ value: 'long', label: 'Achats' }, { value: 'short', label: 'Ventes' }, { value: 'both', label: 'Les deux' }]} />
+      </Row>
+      {on && dir !== 'long' && !(pf.data?.items ?? []).some((p) => p.active && p.risk?.allow_short) && <Banner kind="warn">Aucun portefeuille actif n’autorise encore les ventes : aucun ordre de vente ne sera pris.</Banner>}
+      {ask && <Confirm title="Autoriser les ventes à découvert ?" confirmLabel="Autoriser" message="Les agents pourront ouvrir des positions à découvert (paper trading) sur les portefeuilles qui l’ont activé. Le risque d’une position à découvert n’est pas plafonné par le prix : le stop et la perte maximale par trade restent appliqués." onConfirm={() => save({ allow_short: true }, 'Ventes à découvert autorisées')} onClose={() => setAsk(false)} />}
     </Panel>
   );
 }

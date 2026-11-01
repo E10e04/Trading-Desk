@@ -67,7 +67,10 @@ class AlertsAgent(Agent):
         a = load_skill("alerts")
         rules = a.rules_from_plan({**plan, "date": plan.get("date")}, plan.get("flat_by"))
         out = []
+        short = str(plan.get("side", "buy")).lower() in ("sell", "short")
         for r in rules:
+            if short and r.get("type") in ("stop", "target"):  # vente à découvert : le stop est AU-DESSUS, la cible EN DESSOUS
+                r = {**r, "type": "above" if r["type"] == "stop" else "below"}
             r = {**r, "position_alert": True, "portfolio_id": portfolio_id}
             r["id"] = f"{r['id']}-{int(utcnow().timestamp())}"
             out.append(AlertsAgent.add_rule(r))

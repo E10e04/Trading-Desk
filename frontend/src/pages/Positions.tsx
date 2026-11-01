@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Async, Confirm, DataTable, Empty, Page, Panel, useToast } from '../components/ui';
+import { Async, Confirm, DataTable, Empty, Page, Panel, Pill, useToast } from '../components/ui';
 import { FreshPill, LivePrice } from '../components/Market';
 import { PortfolioSelect } from '../components/PortfolioSelect';
 import { api } from '../lib/api';
@@ -34,7 +34,7 @@ export default function Positions() {
         <Async state={pos}>{() => <DataTable rows={items} rowKey={(r) => r.id} onRow={(r) => nav(`/instrument/${r.symbol}`)} empty={<Empty title="Aucune position ouverte" hint="Les positions apparaissent dès qu’un ordre est exécuté." />} cols={[
           { key: 's', header: 'Instrument', render: (r) => <span className="sym">{r.symbol}</span> },
           { key: 'p', header: 'Portefeuille', hideSm: true, render: (r) => r.portfolio },
-          { key: 'q', header: 'Quantité', num: true, render: (r) => qty(r.qty) },
+          { key: 'q', header: 'Quantité', num: true, render: (r) => <>{qty(Math.abs(r.qty))}{r.side === 'short' && <Pill kind="warn">Vente</Pill>}</> },
           { key: 'a', header: 'Prix moyen', num: true, render: (r) => r.avg_price },
           { key: 'm', header: 'Marché', num: true, render: (r) => <LivePrice symbol={r.symbol} /> },
           { key: 'u', header: 'P&L latent', num: true, render: (r) => <span className={tone(r.unrealized_pnl)}>{signed(r.unrealized_pnl)}</span> },
@@ -46,7 +46,7 @@ export default function Positions() {
           { key: 'c', header: '', render: (r) => <button className="btn sm" onClick={(e) => { e.stopPropagation(); setClose(r); }}>Clôturer</button> },
         ]} />}</Async>
       </Panel>
-      {close && <Confirm title={`Clôturer ${close.symbol} ?`} confirmLabel="Clôturer au marché" danger message={`Vente papier de ${qty(close.qty)} ${close.symbol} au marché, au prix bid courant avec glissement.`} onConfirm={() => closeOne(close)} onClose={() => setClose(null)} />}
+      {close && <Confirm title={`Clôturer ${close.symbol} ?`} confirmLabel="Clôturer au marché" danger message={close.side === 'short' ? `Rachat papier de ${qty(Math.abs(close.qty))} ${close.symbol} au marché, au prix ask courant avec glissement.` : `Vente papier de ${qty(close.qty)} ${close.symbol} au marché, au prix bid courant avec glissement.`} onConfirm={() => closeOne(close)} onClose={() => setClose(null)} />}
       {all && <Confirm title="Tout clôturer ?" confirmLabel="Tout clôturer" danger message={`${items.length} position(s) papier seront clôturées au marché.`} onConfirm={async () => { for (const p of items) await closeOne(p); }} onClose={() => setAll(false)} />}
     </Page>
   );

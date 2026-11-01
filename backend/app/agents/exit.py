@@ -16,6 +16,11 @@ from .base import Agent, AgentContext, AgentResult, params_of
 from .loader import load_skill
 
 
+def _ceil(x: float, digits: int) -> float:
+    f = 10 ** digits
+    return math.ceil(x * f - 1e-9) / f
+
+
 def _floor(x: float, digits: int) -> float:
     f = 10 ** digits
     return math.floor(x * f + 1e-9) / f
@@ -28,7 +33,7 @@ class ExitAgent(Agent):
     skill = "trader-exit"
     implementation = "full"
     limitations = [
-        "Long uniquement (comme le skill).",
+        "Le skill ne planifie que des achats : la vente à découvert (réglages : interrupteur global + portefeuille) est calculée sur des prix « en miroir » (prix de référence × 2 − prix), puis reconvertie ; le skill reste intact. Stop arrondi vers le haut dans ce sens.",
         "Calculs faits en prix « virtuels » (centime) puis reconvertis : stop arrondi vers le bas, cible à la précision de l'instrument.",
         "Le stop/cible sont exécutés par le moteur papier (stop = déclenchement puis marché, donc peut glisser) — pas de garantie de prix.",
     ]
@@ -43,15 +48,16 @@ class ExitAgent(Agent):
 
     async def run(self, ctx: AgentContext, symbol: str = "", entry: float | None = None, opening_range: dict | None = None,
                   setup: str = "orb", entry_time: dt.datetime | str | None = None, stop: str | None = None, target: str | None = None,
-                  flat_by: str | None = None, mode: str = "plan", **_: Any) -> AgentResult:
+                  flat_by: str | None = None, mode: str = "plan", side: str = "buy", **_: Any) -> AgentResult:
         if mode == "monitor":
             return await self.monitor(ctx)
         x = load_skill("exit")
         p = params_of(self, ctx)
         symbol = symbol.upper()
+        side = "sell" if str(side).lower() in ("sell", "short") else "buy"
         warnings: list[str] = []
         try:
-            inst, v, m = ctx.virtual(symbol)
+            inst, v, m = ctx.virtual(symbol, side)
         except (KeyError, ValueError) as ex:
             return AgentResult("error", f"{symbol} : {ex}", {"symbol": symbol}, instrument=symbol)
         if entry is None:
@@ -74,8 +80,10 @@ class ExitAgent(Agent):
                 tp = x.D(round(v.vp(float(tp)), 6))
             ve = v.vp(float(entry))
             orr = opening_range or {}
-            oh = v.vp(orr["high"]) if orr.get("high") is not None else None
-            ol = v.vp(orr["low"]) if orr.get("low") is not None else None
+            # en miroir, le haut virtuel de la fourchette est le bas réel
+            hk, lk = ("low", "high") if v.mirror else ("high", "low")
+            oh = v.vp(orr[hk]) if orr.get(hk) is not None else None
+            ol = v.vp(orr[lk]) if orr.get(lk) is not None else None
             atr = atr_n = None
             if sr == "atr":
                 bars = await ctx.feed.get_bars(symbol, "5m", 320)
@@ -95,14 +103,15 @@ class ExitAgent(Agent):
             fb, fb_note = x.resolve_flat_by(day_mapped, flat_by, {"flat_by": p["flat_by"]}, et)
         except x.PlanError as ex:
             return AgentResult("error", f"{symbol} : plan impossible — {ex}", {"symbol": symbol, "error": str(ex)}, warnings, ctx.quality(symbol), symbol)
-        stop_real = _floor(v.rp(float(c["stop"])), d)
+        # achat : stop arrondi vers le bas (loin de l'entrée) ; vente à découvert : vers le haut
+        stop_real = _ceil(v.rp(float(c["stop"])), d) if side == "sell" else _floor(v.rp(float(c["stop"])), d)
         entry_real = round(float(entry), d + 1)
-        if stop_real >= entry_real:
-            return AgentResult("error", f"{symbol} : stop arrondi ({stop_real}) ≥ entrée ({entry_real}) après conversion de précision.",
+        if (stop_real <= entry_real) if side == "sell" else (stop_real >= entry_real):
+            return AgentResult("error", f"{symbol} : stop arrondi ({stop_real}) du mauvais côté de l'entrée ({entry_real}) après conversion de précision.",
                                {"symbol": symbol}, warnings, ctx.quality(symbol), symbol)
         target_real = round(v.rp(float(c["target"])), d)
-        risk_unit = entry_real - stop_real
-        rr = round((target_real - entry_real) / risk_unit, 2) if risk_unit > 0 else 0.0
+        risk_unit = abs(entry_real - stop_real)
+        rr = round(abs(target_real - entry_real) / risk_unit, 2) if risk_unit > 0 else 0.0
         fb_wall = dt.datetime.combine(day_mapped, dt.datetime.strptime(fb, "%H:%M").time())
         flat_utc = m.wall_to_real(fb_wall)
         if fb_note:
@@ -110,7 +119,7 @@ class ExitAgent(Agent):
         mrr = p.get("min_reward_risk")
         if mrr is not None and rr < float(mrr):
             warnings.append(f"reward:risk {rr} < minimum {mrr} (le contrôle de risque tranchera)")
-        plan = {"symbol": symbol, "side": "buy", "date": day_mapped.isoformat(), "setup": setup, "entry": entry_real, "stop": stop_real,
+        plan = {"symbol": symbol, "side": side, "date": day_mapped.isoformat(), "setup": setup, "entry": entry_real, "stop": stop_real,
                 "target": target_real, "risk_per_unit": round(risk_unit, d + 1), "reward_risk": rr, "stop_rule": sr,
                 "stop_label": c["stop_label"], "target_label": c["target_label"], "stop_detail": c["stop_detail"],
                 "flat_by": fb, "flat_by_utc": flat_utc.isoformat() + "Z", "opening_range": opening_range, "entry_time": et.strftime("%I:%M %p").lstrip("0") if et else None,

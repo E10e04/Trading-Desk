@@ -14,6 +14,8 @@ DEFAULTS: dict[str, Any] = {
     "auto_execute": True,
     "pipeline_enabled": True,            # l'orchestrateur déclenche les agents automatiquement
     "kill_switch": False,                # coupe immédiatement toute prise de position automatique
+    "allow_short": False,                # interrupteur GLOBAL des ventes à découvert (il faut aussi celui du portefeuille)
+    "trade_direction": "long",           # sens des signaux : long (achats) | short (ventes) | both
     "max_quote_age_s": 30,               # une cotation plus vieille ne peut pas servir à exécuter un ordre
     "quote_live_s": 30,
     "quote_hard_stale_s": 300,
@@ -81,3 +83,14 @@ def reset_cache() -> None:
     global _cache
     with _lock:
         _cache = None
+
+
+def trade_directions() -> list[str]:
+    """Sens évalués par les agents : achats par défaut ; ventes (à découvert) seulement si l'interrupteur global est activé."""
+    mode = str(get("trade_direction") or "long")
+    shorts = bool(get("allow_short"))
+    if mode == "short":
+        return ["sell"] if shorts else []
+    if mode == "both":
+        return ["buy", "sell"] if shorts else ["buy"]
+    return ["buy"]

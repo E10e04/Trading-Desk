@@ -109,3 +109,74 @@ async def test_risk_blocks(ctx):
     r = await RiskAgent().run(ctx, portfolio_id=ctx.pid)
     assert r.output["verdict"] == "BLOCK" and any("loss" in x.lower() for x in r.output["reasons"])
     assert sz["qty"] > 0
+
+
+# ---------------------------------------------------------------- vente à découvert (miroir de prix)
+@pytest.fixture
+def sctx(db, tmp_path):
+    settings_store.reset_cache()
+    settings_store.update({"allow_short": True, "auto_execute": True})
+    feed, _ = make_world({"EURUSD": {"type": "forex", "price": 1.10, "down": True}}, today=TODAY, now_utc=NOW, orb={"EURUSD": 3})
+    c = make_ctx(feed, NOW, tmp_path, agent_params={"replays": 800, "max_signal_age_min": 240})
+    c.pid = c.engine.create_portfolio("short", 10000, leverage=30)["id"]
+    c.engine.update_portfolio(c.pid, risk={"allow_short": True})
+    return c
+
+
+async def short_chain(ctx):
+    e = await EntryAgent().run(ctx, symbol="EURUSD", side="sell")
+    assert e.output["status"] == "triggered", e.summary
+    assert e.output["side"] == "sell" and e.output["signal_key"].endswith("|short")
+    ctx.results["entry"] = e
+    t = e.output["trigger"]
+    from app.market.provider import Quote
+    from tests.helpers import real_now
+    px = t["price"]
+    ctx.feed.quotes["EURUSD"] = Quote("EURUSD", px * 0.99999, px * 1.00001, px, None, real_now(), "open")
+    x = await ExitAgent().run(ctx, symbol="EURUSD", entry=px, opening_range=e.output["opening_range"], entry_time=t["closes_at"], side="sell")
+    assert x.status == "ok", x.summary
+    ctx.results["exit"] = x
+    ctx.results["timemachine"] = await TimeMachineAgent().run(ctx, plan=x.output["plan"])
+    b = await BudgetAgent().run(ctx, plan=x.output["plan"], portfolio_id=ctx.pid)
+    ctx.results["budget"] = b
+    r = await RiskAgent().run(ctx, portfolio_id=ctx.pid)
+    return e, x, b, r, {"portfolio_id": ctx.pid, "sizing": b.output, "risk": r.output, "plan": x.output["plan"]}
+
+
+async def test_entry_vente_ne_se_declenche_que_sur_cassure_a_la_baisse(ctx, sctx):
+    up = await EntryAgent().run(ctx, symbol="EURUSD", side="sell")        # séance haussière : pas de signal de vente
+    assert up.output["status"] != "triggered"
+    down = await EntryAgent().run(sctx, symbol="EURUSD", side="buy")      # séance baissière : pas de signal d'achat
+    assert down.output["status"] != "triggered"
+    sell = await EntryAgent().run(sctx, symbol="EURUSD", side="sell")
+    assert sell.output["status"] == "triggered"
+    orr, trig = sell.output["opening_range"], sell.output["trigger"]
+    assert trig["price"] < orr["low"] < orr["high"] and trig["pct_over"] > 0
+
+
+async def test_chaine_complete_vente_a_decouvert(sctx):
+    e, x, b, r, prop = await short_chain(sctx)
+    plan = x.output["plan"]
+    assert plan["side"] == "sell" and plan["stop"] > plan["entry"] > plan["target"] and plan["reward_risk"] > 0
+    assert b.output["side"] == "sell" and b.output["qty"] > 0 and b.output["max_loss_usd"] <= 50.0 + 1e-6
+    assert r.output["verdict"] == "PASS", r.output["reasons"]
+    res = await BrokerAgent().run(sctx, proposal=prop)
+    assert res.output["status"] == "executed", res.summary
+    pos = sctx.engine.list_positions(sctx.pid)
+    assert len(pos) == 1 and pos[0]["side"] == "short" and pos[0]["qty"] == -b.output["qty"]
+    legs = {o["role"]: o for o in sctx.engine.list_orders(sctx.pid) if o["role"] in ("stop_loss", "take_profit")}
+    assert legs["stop_loss"]["side"] == "buy" and legs["stop_loss"]["stop_price"] == plan["stop"]
+    assert legs["take_profit"]["limit_price"] == plan["target"]
+    assert (await BrokerAgent().run(sctx, proposal=prop)).output["status"] == "refused"   # doublon
+    assert sctx.engine.replay_from_fills(sctx.pid)["consistent"]
+
+
+async def test_risk_bloque_la_vente_sans_les_interrupteurs(sctx):
+    *_, b, r, prop = (await short_chain(sctx))
+    settings_store.update({"allow_short": False})
+    r2 = await RiskAgent().run(sctx, portfolio_id=sctx.pid)
+    assert r2.output["verdict"] == "BLOCK" and any("vente à découvert" in x for x in r2.output["reasons"])
+    settings_store.update({"allow_short": True})
+    sctx.engine.update_portfolio(sctx.pid, risk={"allow_short": False})
+    r3 = await RiskAgent().run(sctx, portfolio_id=sctx.pid)
+    assert r3.output["verdict"] == "BLOCK"

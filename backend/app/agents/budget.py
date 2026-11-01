@@ -40,8 +40,9 @@ class BudgetAgent(Agent):
         if not plan or portfolio_id is None:
             return AgentResult("skipped", "Plan et portefeuille requis.", {})
         symbol = plan["symbol"].upper()
+        side = "sell" if str(plan.get("side", "buy")).lower() in ("sell", "short") else "buy"
         try:
-            inst, v, m = ctx.virtual(symbol)
+            inst, v, m = ctx.virtual(symbol, side)
             summ = ctx.engine.portfolio_summary(int(portfolio_id))
         except (KeyError, ValueError) as ex:
             return AgentResult("error", f"{symbol} : {ex}", {"symbol": symbol}, instrument=symbol)
@@ -73,7 +74,7 @@ class BudgetAgent(Agent):
         qv = int(s["qty"])
         entry_ref = v.rp(s["entry"])
         stop, target = plan["stop"], plan["target"]
-        risk_unit = max(entry_ref - stop, 0.0)
+        risk_unit = abs(entry_ref - stop)
         loss_limit = cfg.get("max_loss_per_trade_usd")
         # revérification en prix réels : perte max exacte
         while qv > 0 and loss_limit and qv * v.lot * risk_unit * v.fx > float(loss_limit) + 1e-9:
@@ -97,9 +98,9 @@ class BudgetAgent(Agent):
         max_loss = round(qty * risk_unit * v.fx, 2)
         notional = round(qty * entry_ref * v.fx, 2)
         margin = round(notional / lev, 2)
-        rr = round((target - entry_ref) / risk_unit, 2) if risk_unit > 0 else 0.0
+        rr = round(abs(target - entry_ref) / risk_unit, 2) if risk_unit > 0 else 0.0
         limits = [{"name": l["name"], "usd": l["usd"], "qty": v.rq(l["shares"]), "binds": l.get("binds", False), "how": l["how"]} for l in s["limits"]] + extra_limits
-        out = {"symbol": symbol, "portfolio_id": int(portfolio_id), "qty": qty, "qty_virtual": qv, "lot": v.lot, "fx_to_usd": v.fx,
+        out = {"symbol": symbol, "side": side, "portfolio_id": int(portfolio_id), "qty": qty, "qty_virtual": qv, "lot": v.lot, "fx_to_usd": v.fx,
                "entry": round(entry_ref, d + 1), "entry_from": s["entry_from"], "stop": stop, "target": target,
                "risk_per_unit": round(risk_unit, d + 1), "reward_risk": rr, "max_loss_usd": max_loss, "notional_usd": notional,
                "margin_usd": margin, "bound_by": bound_by, "limits": limits, "refusal": refusal,

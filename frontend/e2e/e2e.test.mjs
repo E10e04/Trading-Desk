@@ -305,4 +305,24 @@ describe('interface', () => {
     await page.getByRole('tab', { name: /Général|Interface/ }).first().click().catch(() => {});
     await ctx.close();
   });
+
+  test('ventes à découvert : trois interrupteurs dans Réglages, désactivés par défaut, confirmation à l’activation', async () => {
+    const { ctx, page, errors } = await open('/settings');
+    await page.getByText('Ventes à découvert (paper trading)').waitFor();
+    const glob = page.getByRole('switch', { name: 'Ventes à découvert (global)' });
+    assert.equal(await glob.isChecked(), false);
+    assert.equal(await page.getByRole('button', { name: 'Achats' }).count(), 1);
+    await glob.evaluate((el) => el.click());
+    await page.getByRole('button', { name: 'Autoriser', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('input[aria-label="Ventes à découvert (global)"]')?.checked === true);
+    await page.getByRole('button', { name: 'Les deux' }).click();
+    await page.reload();
+    await page.getByText('Ventes à découvert (paper trading)').waitFor();
+    assert.equal(await page.getByRole('switch', { name: 'Ventes à découvert (global)' }).isChecked(), true);
+    await page.getByRole('switch', { name: 'Ventes à découvert (global)' }).evaluate((el) => el.click());   // remise à l'état d'origine
+    await page.waitForFunction(() => document.querySelector('input[aria-label="Ventes à découvert (global)"]')?.checked === false);
+    await page.getByRole('button', { name: 'Achats' }).click();
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
 });

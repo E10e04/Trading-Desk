@@ -51,10 +51,11 @@ class AgentContext:
     agent_model: str | None = None  # modèle IA configuré pour cet agent
     results: dict[str, AgentResult] = field(default_factory=dict)  # résultats des agents amont (même exécution)
 
-    def virtual(self, symbol: str) -> tuple[Any, Virtual, SessionMapper]:
+    def virtual(self, symbol: str, side: str = "buy") -> tuple[Any, Virtual, SessionMapper]:
+        """Lot virtuel de l'instrument ; `side="sell"` : prix en miroir (vente à découvert vue comme un achat)."""
         inst = self.feed.info(symbol)
         q = self.feed.quotes.get(symbol)
-        v = make_virtual(inst, self.feed.fx_to_usd(inst.quote_ccy), q.mid if q else None)
+        v = make_virtual(inst, self.feed.fx_to_usd(inst.quote_ccy), q.mid if q else None, side)
         return inst, v, mapper_for(inst, self.agent_params.get("session_anchor_utc") or self.global_param("session_anchor_utc"))
 
     def global_param(self, name: str) -> Any:

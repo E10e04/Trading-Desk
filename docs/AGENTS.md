@@ -108,6 +108,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 - symbol
 - setup (orb|level)
 - level (prix réel, si setup=level)
+- side (buy|sell : sell = cassure à la baisse, vente à découvert)
 
 **Sorties.**
 
@@ -134,6 +135,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 
 - Barres 5 minutes construites depuis le flux BiQuote (ou son historique) : pas de volume réel (CFD), donc le filtre « volume minimal » du skill est ignoré.
 - Marchés continus : la fourchette d'ouverture démarre à l'ancrage UTC configuré (séance mappée 6h30) ; fenêtre d'entrée du skill appliquée à cette séance mappée.
+- Vente à découvert (sens `sell`) : cassure à la BAISSE de la fourchette, évaluée sur des prix en miroir avec le même skill ; seulement si l'interrupteur global et celui du portefeuille sont activés.
 - Pas de mode `watch` interactif du skill : la surveillance est assurée par l'orchestrateur (à chaque clôture de bougie 5 min).
 
 ## Agent Exit (`exit`)
@@ -172,7 +174,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 
 **Écarts avec le skill d'origine et limites.**
 
-- Long uniquement (comme le skill).
+- Le skill ne planifie que des achats : la vente à découvert (réglages : interrupteur global + portefeuille) est calculée sur des prix « en miroir » (prix de référence × 2 − prix), puis reconvertie ; le skill reste intact. Stop arrondi vers le haut dans ce sens.
 - Calculs faits en prix « virtuels » (centime) puis reconvertis : stop arrondi vers le bas, cible à la précision de l'instrument.
 - Le stop/cible sont exécutés par le moteur papier (stop = déclenchement puis marché, donc peut glisser) — pas de garantie de prix.
 

@@ -26,7 +26,7 @@ from .loader import load_skill
 
 def real_order(sizing: dict, digits: int) -> dict[str, Any]:
     """Ordre en unités réelles, au format des champs du skill (chaînes) — pour le ticket et parse_yes."""
-    o = {"symbol": sizing["symbol"], "side": "buy", "qty": f"{sizing['qty']:g}", "type": sizing.get("order_type", "market"),
+    o = {"symbol": sizing["symbol"], "side": "sell" if sizing.get("side") == "sell" else "buy", "qty": f"{sizing['qty']:g}", "type": sizing.get("order_type", "market"),
          "time_in_force": "day", "order_class": "bracket",
          "take_profit_limit_price": f"{sizing['target']:.{digits}f}", "stop_loss_stop_price": f"{sizing['stop']:.{digits}f}",
          "plan": {"entry": sizing["entry"], "stop": sizing["stop"], "target": sizing["target"], "max_loss": sizing["max_loss_usd"]}}
@@ -37,7 +37,8 @@ def real_order(sizing: dict, digits: int) -> dict[str, Any]:
 
 def ticket_text(sizing: dict, digits: int) -> list[str]:
     typ = "au marché" if sizing.get("order_type", "market") == "market" else f"limite {sizing['entry']:.{digits}f}"
-    return [f"ACHAT {sizing['qty']:g} {sizing['symbol']}, {typ} (≈ {sizing['notional_usd']:,.2f} USD, marge ≈ {sizing['margin_usd']:,.2f} USD)",
+    verb = "VENTE À DÉCOUVERT" if sizing.get("side") == "sell" else "ACHAT"
+    return [f"{verb} {sizing['qty']:g} {sizing['symbol']}, {typ} (≈ {sizing['notional_usd']:,.2f} USD, marge ≈ {sizing['margin_usd']:,.2f} USD)",
             f"stop-loss {sizing['stop']:.{digits}f}", f"take-profit {sizing['target']:.{digits}f}",
             f"perte max ≈ {sizing['max_loss_usd']:,.2f} USD si le stop s'exécute au prix du stop (peut être pire en marché rapide)",
             "PAPER TRADING : aucune somme réelle n'est engagée."]
@@ -94,7 +95,7 @@ class BrokerAgent(Agent):
         rorder = real_order(sizing, d)
         text = ticket_text(sizing, d)
         # 2. doublon (même empreinte déjà envoyée aujourd'hui sur ce portefeuille)
-        fp = risk["fingerprint"]
+        fp = risk["fingerprint"] + (":sell" if sizing.get("side") == "sell" else "")  # un achat et une vente identiques ne sont pas des doublons
         today0 = ctx.clock().replace(hour=0, minute=0, second=0, microsecond=0)
         with session_scope() as s:
             for o in s.scalars(select(Order).where(Order.portfolio_id == pid, Order.created_at >= today0, Order.role.in_(("entry", "standalone")))):
@@ -116,7 +117,7 @@ class BrokerAgent(Agent):
         # 4. envoi au moteur papier
         plan = {**(proposal.get("plan") or {}), "entry": sizing["entry"], "stop": sizing["stop"], "target": sizing["target"],
                 "flat_by_utc": sizing.get("flat_by_utc") or (proposal.get("plan") or {}).get("flat_by_utc"), "flat_by": sizing.get("flat_by")}
-        req = OrderRequest(portfolio_id=pid, symbol=symbol, side="buy", type=sizing.get("order_type", "market"), qty=float(sizing["qty"]),
+        req = OrderRequest(portfolio_id=pid, symbol=symbol, side="sell" if sizing.get("side") == "sell" else "buy", type=sizing.get("order_type", "market"), qty=float(sizing["qty"]),
                            limit_price=sizing["entry"] if sizing.get("order_type") == "limit" else None, tif="day",
                            stop_loss=sizing["stop"], take_profit=sizing["target"], source="agent:broker", proposal_id=pid_ref, plan=plan,
                            role="entry", meta={"fingerprint": fp, "max_loss_usd": sizing["max_loss_usd"], "decision": decision,
