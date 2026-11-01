@@ -40,8 +40,24 @@ def init_engine(url: str | None = None) -> Engine:
             cur.close()
     _Session = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     from . import models  # noqa: F401  (enregistre les tables)
+    _migrate_watchlist(_engine)
     Base.metadata.create_all(_engine)
     return _engine
+
+
+def _migrate_watchlist(engine: Engine) -> None:
+    """Ancienne table : une seule ligne par instrument (clé = symbole). Nouvelle : une ligne par ajout (clé = id). Les données sont conservées."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "watchlist" not in insp.get_table_names() or any(c["name"] == "id" for c in insp.get_columns("watchlist")):
+        return
+    with engine.begin() as c:
+        c.execute(text("ALTER TABLE watchlist RENAME TO watchlist_old"))
+    Base.metadata.tables["watchlist"].create(engine)
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO watchlist (symbol, added_at, source, reason, expires_at) "
+                       "SELECT symbol, added_at, source, reason, expires_at FROM watchlist_old"))
+        c.execute(text("DROP TABLE watchlist_old"))
 
 
 def get_engine() -> Engine:

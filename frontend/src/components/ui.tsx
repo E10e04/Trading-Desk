@@ -282,3 +282,31 @@ export function DataTable<T>({ rows, cols, rowKey, onRow, selected, empty, maxHe
     </div>
   );
 }
+
+
+/** Pages de 50 : « Précédent · 1 2 3 … 9 · Suivant », en bas d'un tableau. */
+export function pageList(page: number, pages: number): (number | '…')[] {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+  const set = new Set([1, 2, pages - 1, pages, page - 1, page, page + 1]);
+  const nums = [...set].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  nums.forEach((n, i) => { if (i && n - nums[i - 1] > 1) out.push('…'); out.push(n); });
+  return out;
+}
+export function Pager({ page, total, per = 50, onChange }: { page: number; total: number; per?: number; onChange: (p: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / per));
+  if (total <= 0) return null;
+  const from = (page - 1) * per + 1;
+  const to = Math.min(page * per, total);
+  return (
+    <nav className="pager" aria-label="Pagination">
+      <span className="muted">{from}–{to} sur {total}</span>
+      {pages > 1 && <span className="pager-pages">
+        <button className="btn sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>Précédent</button>
+        {pageList(page, pages).map((n, i) => n === '…' ? <span key={`e${i}`} className="muted">…</span>
+          : <button key={n} className={`btn sm${n === page ? ' primary' : ''}`} aria-label={`Page ${n}`} aria-current={n === page ? 'page' : undefined} onClick={() => onChange(n)}>{n}</button>)}
+        <button className="btn sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>Suivant</button>
+      </span>}
+    </nav>
+  );
+}

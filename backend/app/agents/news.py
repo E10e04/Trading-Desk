@@ -161,7 +161,7 @@ class NewsAgent(Agent):
     def _watch(ctx: AgentContext) -> list[str]:
         from ..models import WatchItem
         with session_scope() as s:
-            return [w.symbol for w in s.query(WatchItem).all()]
+            return sorted({w.symbol for w in s.query(WatchItem).all()})
 
     @staticmethod
     def _status(st: dict) -> dict:

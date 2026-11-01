@@ -258,6 +258,14 @@ class OpenRouterClient:
         }.get(r.status_code, "")
         return f"OpenRouter {r.status_code} : {detail}" + (f" — {hint}" if hint else "")
 
+    def calls(self, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        with session_scope() as s:
+            total = int(s.scalar(select(func.count(LlmUsage.id))) or 0)
+            items = [{"id": u.id, "ts": u.ts.isoformat() + "Z", "agent": u.agent_id, "model": u.model, "ok": u.ok, "latency_ms": u.latency_ms,
+                      "tokens": u.prompt_tokens + u.completion_tokens, "cost_usd": u.cost_usd, "error": u.error}
+                     for u in s.scalars(select(LlmUsage).order_by(LlmUsage.id.desc()).limit(limit).offset(offset))]
+        return {"total": total, "limit": limit, "offset": offset, "items": items}
+
     def stats(self) -> dict[str, Any]:
         with session_scope() as s:
             rows = list(s.execute(select(LlmUsage.model, func.count(LlmUsage.id), func.coalesce(func.avg(LlmUsage.latency_ms), 0),

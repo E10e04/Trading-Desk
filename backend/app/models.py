@@ -204,8 +204,10 @@ class LlmUsage(Base):
 
 
 class WatchItem(Base):
+    """Une ligne par AJOUT : un même instrument peut figurer plusieurs fois, avec des raisons différentes."""
     __tablename__ = "watchlist"
-    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
     added_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     source: Mapped[str] = mapped_column(String(24), default="manual")  # manual | scanner
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)

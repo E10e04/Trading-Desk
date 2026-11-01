@@ -12,6 +12,7 @@ from ..agents.loader import integrity, provenance, skill_md
 from ..agents.registry import AGENTS, ORDER, get_agent
 from ..db import session_scope
 from ..models import AgentRun, WatchItem
+from ..notify import notify
 from ..runtime import Runtime
 from .deps import Auth, runtime
 
@@ -209,7 +210,7 @@ class WatchBody(BaseModel):
 @router.get("/watchlist")
 def watchlist():
     with session_scope() as s:
-        return {"items": [{"symbol": w.symbol, "source": w.source, "reason": w.reason, "added_at": w.added_at.isoformat() + "Z",
+        return {"items": [{"id": w.id, "symbol": w.symbol, "source": w.source, "reason": w.reason, "added_at": w.added_at.isoformat() + "Z",
                            "expires_at": w.expires_at.isoformat() + "Z" if w.expires_at else None} for w in s.scalars(select(WatchItem).order_by(WatchItem.added_at.desc()))]}
 
 
@@ -232,21 +233,36 @@ def watch_add(body: WatchBody, rt: Runtime = Depends(runtime)):
         source, reason = r["source"], r["label"]
     else:
         source, reason = "manual", body.reason
+    created = True
     with session_scope() as s:
-        w = s.get(WatchItem, sym)
+        # une même raison sur un même instrument n'est pas dupliquée (elle est simplement renouvelée) ; une autre raison crée une ligne à part
+        w = s.scalar(select(WatchItem).where(WatchItem.symbol == sym, WatchItem.source == source, WatchItem.reason == reason))
         if w:
-            w.source, w.reason, w.expires_at = source, reason or w.reason, None
+            w.expires_at, created = None, False
         else:
             s.add(WatchItem(symbol=sym, source=source, reason=reason))
     rt.orch.invalidate_watch()
-    return {"ok": True, "symbol": sym}
+    if created:  # une alerte par ajout, séparée des autres ajouts du même instrument
+        notify(rt.bus, "info", "watchlist", f"{sym} : ajouté à la surveillance", reason or "Sans raison précisée", sym)
+    return {"ok": True, "symbol": sym, "created": created}
+
+
+@router.delete("/watchlist/item/{item_id}")
+def watch_del_item(item_id: int, rt: Runtime = Depends(runtime)):
+    """Retire UN ajout (une raison) ; l'instrument reste suivi s'il a d'autres raisons."""
+    with session_scope() as s:
+        w = s.get(WatchItem, item_id)
+        if w:
+            s.delete(w)
+    rt.orch.invalidate_watch()
+    return {"ok": True}
 
 
 @router.delete("/watchlist/{symbol}")
 def watch_del(symbol: str, rt: Runtime = Depends(runtime)):
+    """Retire toutes les raisons d'un instrument."""
     with session_scope() as s:
-        w = s.get(WatchItem, symbol.upper())
-        if w:
+        for w in s.scalars(select(WatchItem).where(WatchItem.symbol == symbol.upper())):
             s.delete(w)
     rt.orch.invalidate_watch()
     return {"ok": True}

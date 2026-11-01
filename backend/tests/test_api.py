@@ -221,3 +221,61 @@ def test_changer_le_modele_global_remet_news_et_analyste_sur_le_modele_global(cl
     assert client.get("/api/agents/news").json()["config"]["model"] is None
     assert client.get("/api/agents/analyst").json()["config"]["model"] is None
     assert client.put("/api/settings", json={"llm_model": "nouveau/modele"}).json().get("agent_overrides_cleared") is None
+
+
+def test_plusieurs_raisons_pour_un_meme_instrument_une_alerte_par_ajout(client):
+    n0 = client.get("/api/notifications").json()["items"]
+    assert client.post("/api/watchlist", json={"symbol": "EURUSD", "reason_code": "idea"}).json()["created"] is True
+    assert client.post("/api/watchlist", json={"symbol": "EURUSD", "reason_code": "news"}).json()["created"] is True
+    again = client.post("/api/watchlist", json={"symbol": "EURUSD", "reason_code": "idea"}).json()
+    assert again["created"] is False                       # même raison : renouvelée, pas dupliquée
+    items = client.get("/api/watchlist").json()["items"]
+    assert [i["reason"] for i in items if i["symbol"] == "EURUSD"].count("Idée personnelle") == 1 and len(items) == 2
+    notes = [n for n in client.get("/api/notifications").json()["items"] if n["source"] == "watchlist"]
+    assert len(notes) == 2 and len(notes) - len([n for n in n0 if n["source"] == "watchlist"]) == 2
+    assert {n["body"] for n in notes} == {"Idée personnelle", "Actualité ou catalyseur (News)"}
+    one = next(i for i in items if i["source"] == "news")
+    client.delete(f"/api/watchlist/item/{one['id']}")       # retire une seule raison
+    left = client.get("/api/watchlist").json()["items"]
+    assert len(left) == 1 and left[0]["source"] == "manual"
+    assert client.rt.orch.watch_symbols() == ["EURUSD"]
+    client.delete("/api/watchlist/EURUSD")
+    assert client.get("/api/watchlist").json()["items"] == []
+
+
+def test_migration_de_l_ancienne_liste_de_surveillance(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+    from app.db import Base, _migrate_watchlist
+    from app import models  # noqa: F401
+    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE watchlist (symbol VARCHAR(32) PRIMARY KEY, added_at DATETIME, source VARCHAR(24), reason TEXT, expires_at DATETIME)"))
+        c.execute(text("INSERT INTO watchlist VALUES ('BTCUSD', '2026-10-30 10:00:00', 'manual', 'Idée personnelle', NULL)"))
+    _migrate_watchlist(eng)
+    Base.metadata.create_all(eng)
+    assert any(c["name"] == "id" for c in inspect(eng).get_columns("watchlist"))
+    with eng.begin() as c:
+        rows = c.execute(text("SELECT id, symbol, reason FROM watchlist")).all()
+        assert [(r[1], r[2]) for r in rows] == [("BTCUSD", "Idée personnelle")] and rows[0][0] == 1
+        c.execute(text("INSERT INTO watchlist (symbol, added_at, source, reason) VALUES ('BTCUSD', '2026-10-31 10:00:00', 'manual', 'autre')"))
+        assert c.execute(text("SELECT count(*) FROM watchlist")).scalar() == 2
+    _migrate_watchlist(eng)  # idempotent
+
+
+def test_pagination_des_notifications_et_des_appels_ia(client):
+    from app.notify import notify
+    for i in range(120):
+        notify(None, "warning" if i % 2 else "info", "test", f"n{i}")
+    p1 = client.get("/api/notifications?limit=50&offset=0").json()
+    p3 = client.get("/api/notifications?limit=50&offset=100").json()
+    assert p1["total"] == 120 and len(p1["items"]) == 50 and len(p3["items"]) == 20
+    assert p1["items"][0]["title"] == "n119" and p3["items"][-1]["title"] == "n0"
+    w = client.get("/api/notifications?limit=50&level=warning").json()
+    assert w["total"] == 60 and all(n["level"] == "warning" for n in w["items"])
+    from app.db import session_scope
+    from app.models import LlmUsage
+    with session_scope() as s:
+        for i in range(55):
+            s.add(LlmUsage(agent_id="news", model="m", ok=True, latency_ms=10, prompt_tokens=1, completion_tokens=1, cost_usd=0.0))
+    c = client.get("/api/llm/calls?limit=50&offset=50").json()
+    assert c["total"] == 55 and len(c["items"]) == 5

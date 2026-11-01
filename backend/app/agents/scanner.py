@@ -199,7 +199,7 @@ class ScannerAgent(Agent):
             if mode == "watchlist":
                 from ..models import WatchItem
                 with session_scope() as s:
-                    base = [w.symbol for w in s.query(WatchItem).all()]
+                    base = sorted({w.symbol for w in s.query(WatchItem).all()})
             elif mode == "all":
                 base = sorted(ctx.feed.instruments)
             else:
@@ -233,7 +233,6 @@ class ScannerAgent(Agent):
         now = utcnow()
         with session_scope() as s:
             s.execute(delete(WatchItem).where(WatchItem.source == "scanner"))
-            for h in hits:
-                if s.get(WatchItem, h["symbol"]) is None:
-                    s.add(WatchItem(symbol=h["symbol"], source="scanner", reason="; ".join(h["reasons"])[:500],
-                                    expires_at=now + dt.timedelta(hours=ttl_h)))
+            for h in hits:  # une ligne propre au Scanner, même si l'instrument est déjà suivi pour une autre raison
+                s.add(WatchItem(symbol=h["symbol"], source="scanner", reason="; ".join(h["reasons"])[:500],
+                                expires_at=now + dt.timedelta(hours=ttl_h)))

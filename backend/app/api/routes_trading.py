@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..db import session_scope
 from ..models import AgentRun, JournalNote, Notification, Portfolio, Strategy
@@ -266,14 +266,18 @@ def analyses(symbol: str = "", limit: int = Query(50, le=300)):
 
 # ---------------------------------------------------------------- notifications
 @router.get("/notifications")
-def notifications(unread: bool = False, limit: int = Query(100, le=500)):
+def notifications(unread: bool = False, level: str = "", limit: int = Query(100, le=500), offset: int = Query(0, ge=0)):
+    """Pagination : `limit` par page (50 dans l'interface) et `offset` ; `total` = nombre de notifications correspondant aux filtres."""
     with session_scope() as s:
-        q = select(Notification).order_by(Notification.id.desc())
+        q = select(Notification)
         if unread:
             q = q.where(Notification.read.is_(False))
-        rows = list(s.scalars(q.limit(limit)))
+        if level:
+            q = q.where(Notification.level == level)
+        total = s.scalar(select(func.count()).select_from(q.subquery())) or 0
+        rows = list(s.scalars(q.order_by(Notification.id.desc()).limit(limit).offset(offset)))
         unread_n = s.query(Notification).filter(Notification.read.is_(False)).count()
-        return {"unread": unread_n, "items": [{"id": n.id, "ts": n.ts.isoformat() + "Z", "level": n.level, "source": n.source, "title": n.title,
+        return {"unread": unread_n, "total": total, "limit": limit, "offset": offset, "items": [{"id": n.id, "ts": n.ts.isoformat() + "Z", "level": n.level, "source": n.source, "title": n.title,
                                                "body": n.body, "symbol": n.symbol, "read": n.read} for n in rows]}
 
 

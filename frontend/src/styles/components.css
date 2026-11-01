@@ -245,3 +245,21 @@ pre.json { margin: 0; padding: 12px; background: var(--bg); border: 1px solid va
 }
 #tv-attr-logo { display: none !important; }
 @media (max-width: 1360px) { .grid.c6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--border); }
+.pager-pages { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Réglages › Surveillance : grille « bento » 2 colonnes x 2 lignes, à hauteur fixe (celle de l'écran).
+   La liste de surveillance occupe toute la colonne de droite ; « Alerte sur tous les actifs » et « Alertes de prix » se partagent la colonne
+   de gauche. Chaque carte défile en interne : aucune ne s'allonge démesurément. */
+.bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); gap: var(--gap); align-items: stretch;
+  height: clamp(520px, calc(100vh - 270px), 820px); }
+.bento > .b-all { grid-column: 1; grid-row: 1; }
+.bento > .b-rules { grid-column: 1; grid-row: 2; }
+.bento > .b-wl { grid-column: 2; grid-row: 1 / span 2; }
+.bento > .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.bento > .panel > .body { flex: 1; min-height: 0; overflow: auto; }
+@media (max-width: 1100px) {
+  .bento { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
+  .bento > .b-all, .bento > .b-rules, .bento > .b-wl { grid-column: 1; grid-row: auto; }
+  .bento .tbl-wrap { max-height: 360px; overflow: auto; }
+}

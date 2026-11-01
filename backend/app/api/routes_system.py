@@ -143,6 +143,12 @@ async def llm_test(b: TestBody, rt: Runtime = Depends(runtime)):
     return await rt.llm.test_connection(b.model)
 
 
+@router.get("/llm/calls")
+def llm_calls(limit: int = 50, offset: int = 0, rt: Runtime = Depends(runtime)):
+    """Appels IA récents, paginés (50 par page dans l'interface)."""
+    return rt.llm.calls(max(1, min(limit, 200)), max(0, offset))
+
+
 @router.get("/llm/stats")
 def llm_stats(rt: Runtime = Depends(runtime)):
     return rt.llm.stats()

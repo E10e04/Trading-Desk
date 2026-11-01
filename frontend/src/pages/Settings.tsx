@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Async, Banner, Confirm, DataTable, Empty, Field, KV, Page, Panel, Pill, Segmented, Switch, Tabs, useToast } from '../components/ui';
+import { Async, Banner, Confirm, DataTable, Empty, Field, KV, Page, Pager, Panel, Pill, Segmented, Switch, Tabs, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { useTheme } from '../lib/theme';
@@ -164,6 +164,8 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }
   const toast = useToast();
   const status = useApi<any>('/api/llm/status', 15000);
   const stats = useApi<any>('/api/llm/stats', 20000);
+  const [callPage, setCallPage] = useState(1);
+  const calls = useApi<{ total: number; items: any[] }>(`/api/llm/calls?limit=50&offset=${(callPage - 1) * 50}`, 20000);
   const models = useApi<{ default: string; items: any[] }>('/api/llm/models');
   const agents = useApi<{ items: any[] }>('/api/agents');
   const [key, setKey] = useState('');
@@ -218,7 +220,7 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }
         ]} />}</Async>
       </Panel>
       <Panel title="Appels récents" flush>
-        <Async state={stats}>{(d) => <DataTable rows={d.recent} rowKey={(r: any) => r.ts + r.agent} empty={<Empty title="Aucun appel" hint="Les appels IA (résumés optionnels) sont listés ici avec latence, jetons et coût." />} cols={[
+        <Async state={calls}>{(d) => <DataTable rows={d.items} rowKey={(r: any) => r.id} empty={<Empty title="Aucun appel" hint="Les appels IA (résumés optionnels) sont listés ici avec latence, jetons et coût." />} cols={[
           { key: 't', header: 'Heure', render: (r: any) => dateTime(r.ts) },
           { key: 'a', header: 'Agent', render: (r: any) => r.agent },
           { key: 'm', header: 'Modèle', hideSm: true, render: (r: any) => r.model },
@@ -227,6 +229,7 @@ function AI({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void }
           { key: 'k', header: 'Jetons', num: true, render: (r: any) => r.tokens },
           { key: 'c', header: 'Coût', num: true, render: (r: any) => usd(r.cost_usd, 5) },
         ]} />}</Async>
+        <Pager page={callPage} total={calls.data?.total ?? 0} per={50} onChange={setCallPage} />
       </Panel>
       {del && <Confirm title="Supprimer la clé ?" danger confirmLabel="Supprimer" message="Les résumés IA seront désactivés jusqu’à l’enregistrement d’une nouvelle clé." onConfirm={async () => { await api('/api/llm/key', { method: 'DELETE' }); status.reload(); }} onClose={() => setDel(false)} />}
     </div>
@@ -262,12 +265,12 @@ function Watch({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => voi
     try { await api('/api/alerts/rules', { body: { rule } }); setPrice(''); setNote(''); rules.reload(); } catch (e) { toast('error', 'Règle refusée', (e as Error).message); }
   };
   return (
-    <div className="grid c2">
-      <Panel title="Alerte sur tous les actifs">
+    <div className="bento">
+      <Panel title="Alerte sur tous les actifs" className="b-all">
         <Row title="Surveiller tous les instruments disponibles" hint="Une notification est émise, une fois par jour et par sens, quand un instrument bouge d’au moins le seuil depuis l’ouverture du jour. Fonctionne sur les cotations en direct de tout le catalogue (BiQuote et Kraken), sans créer une règle par instrument."><Switch label="Alerte sur tous les actifs" checked={vals.alert_all_assets !== false} onChange={(v) => save({ alert_all_assets: v }, v ? 'Alerte globale activée' : 'Alerte globale désactivée')} /></Row>
         <Row title="Seuil de variation (%)" hint="Variation depuis l’ouverture du jour, à la hausse ou à la baisse."><NumberSetting k="alert_all_pct" vals={vals} save={save} /></Row>
       </Panel>
-      <Panel title="Liste de surveillance" flush>
+      <Panel title="Liste de surveillance" flush className="b-wl">
         <div className="stack" style={{ padding: 12, gap: 8 }}>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 220px', minWidth: 0 }}><InstrumentPicker instruments={instruments} value={sym} onChange={setSym} label="Instrument à surveiller" /></div>
@@ -277,17 +280,17 @@ function Watch({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => voi
             </select>
             <button className="btn primary" disabled={!sym || !reason} onClick={addW}>Ajouter</button>
           </div>
-          <span className="muted">{picked ? <>Origine : <b>{picked.source_label}</b> (définie automatiquement selon la raison)</> : 'L’origine est définie automatiquement selon la raison choisie.'}</span>
+          <span className="muted">{picked ? <>Origine : <b>{picked.source_label}</b> (définie automatiquement selon la raison). </> : 'L’origine est définie automatiquement selon la raison choisie. '}Un instrument peut avoir plusieurs raisons : chaque ajout est une ligne à part, avec sa propre alerte.</span>
           {!instruments.length && <span className="warn">Aucun instrument disponible : le catalogue de marchés n’est pas encore chargé.</span>}
         </div>
-        <Async state={wl}>{(d) => <DataTable rows={d.items} rowKey={(r) => r.symbol} empty={<Empty title="Liste vide" hint="Les instruments retenus par le Scanner s’ajoutent ici ; vous pouvez aussi en ajouter à la main." />} cols={[
+        <Async state={wl}>{(d) => <DataTable rows={d.items} rowKey={(r) => r.id} empty={<Empty title="Liste vide" hint="Les instruments retenus par le Scanner s’ajoutent ici ; vous pouvez aussi en ajouter à la main." />} cols={[
           { key: 's', header: 'Instrument', render: (r) => <span className="sym">{r.symbol}</span> },
           { key: 'o', header: 'Origine', render: (r) => originLabel(r.source) },
           { key: 'r', header: 'Raison', hideSm: true, render: (r) => <span className="muted">{r.reason}</span> },
-          { key: 'x', header: '', render: (r) => <button className="btn sm ghost" aria-label={`Retirer ${r.symbol}`} onClick={async () => { await api(`/api/watchlist/${r.symbol}`, { method: 'DELETE' }); wl.reload(); }}>Retirer</button> },
+          { key: 'x', header: '', render: (r) => <button className="btn sm ghost" aria-label={`Retirer ${r.symbol} : ${r.reason ?? 'sans raison'}`} onClick={async () => { await api(`/api/watchlist/item/${r.id}`, { method: 'DELETE' }); wl.reload(); }}>Retirer</button> },
         ]} />}</Async>
       </Panel>
-      <Panel title="Alertes de prix" flush>
+      <Panel title="Alertes de prix" flush className="b-rules">
         <div className="row" style={{ padding: 12 }}>
           <input className="input" style={{ width: 110 }} placeholder="Instrument" aria-label="Instrument de l’alerte" value={ruleSym} onChange={(e) => setRuleSym(e.target.value.toUpperCase())} />
           <select className="input" style={{ width: 150 }} aria-label="Type d’alerte" value={type} onChange={(e) => setType(e.target.value)}><option value="above">Au-dessus de</option><option value="below">En dessous de</option><option value="pct_move">Variation de (%)</option></select>

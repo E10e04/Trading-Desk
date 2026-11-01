@@ -325,4 +325,44 @@ describe('interface', () => {
     assert.deepEqual(errors, []);
     await ctx.close();
   });
+
+  test('notifications : pages de 50, navigation vers les pages suivantes', async () => {
+    const { ctx, page } = await open('/');
+    const mk = (a, b) => Array.from({ length: b - a }, (_, i) => ({ id: 1000 - (a + i), ts: '2026-11-01T10:00:00Z', level: 'info', source: 't', title: `Notif ${a + i + 1}`, body: '', symbol: null, read: true }));
+    await page.route('**/api/notifications?*', (r) => {
+      const u = new URL(r.request().url());
+      const off = Number(u.searchParams.get('offset') ?? 0), lim = Number(u.searchParams.get('limit') ?? 50);
+      r.fulfill({ json: { unread: 0, total: 120, limit: lim, offset: off, items: mk(off, Math.min(off + lim, 120)) } });
+    });
+    await page.goto(`${BASE}/#/notifications`);
+    await page.getByText('Notif 1', { exact: true }).waitFor();
+    assert.equal(await page.locator('tbody tr').count(), 50);
+    await page.getByText('1–50 sur 120').waitFor();
+    await page.getByRole('button', { name: 'Page 3' }).click();
+    await page.getByText('101–120 sur 120').waitFor();
+    assert.equal(await page.locator('tbody tr').count(), 20);
+    await page.getByRole('button', { name: 'Précédent' }).click();
+    await page.getByText('51–100 sur 120').waitFor();
+    await ctx.close();
+  });
+
+  test('surveillance : plusieurs raisons pour un instrument, grille bento aux hauteurs alignées', async () => {
+    const { ctx, page } = await open('/settings');
+    await page.getByRole('tab', { name: 'Surveillance et alertes' }).click();
+    await page.waitForSelector('.bento');
+    const tok = TOKEN;
+    for (const code of ['idea', 'news']) {
+      await page.evaluate(async ([c, t]) => { await fetch('/api/watchlist', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` }, body: JSON.stringify({ symbol: 'GBPUSD', reason_code: c }) }); }, [code, tok]);
+    }
+    await page.reload();
+    await page.getByRole('tab', { name: 'Surveillance et alertes' }).click();
+    await page.waitForSelector('.bento .b-wl tbody tr');
+    const rows = await page.locator('.bento .b-wl tbody tr', { hasText: 'GBPUSD' }).count();
+    assert.ok(rows >= 2, `GBPUSD apparaît ${rows} fois`);
+    const box = async (sel) => page.locator(sel).first().evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left }; });
+    const [all, rules, wl] = [await box('.b-all'), await box('.b-rules'), await box('.b-wl')];
+    assert.ok(Math.abs(all.top - wl.top) < 2 && Math.abs(rules.bottom - wl.bottom) < 2, 'les deux cartes de gauche couvrent la hauteur de la liste de surveillance');
+    assert.ok(wl.left > all.left + 100, 'la liste de surveillance est la grande carte de droite');
+    await ctx.close();
+  });
 });

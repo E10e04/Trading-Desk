@@ -130,4 +130,7 @@ MIT. Les skills vendorisés restent © Jake Schincariol (MIT), voir `backend/app
 - Le modèle IA choisi dans Réglages › IA s'applique à tous les agents IA (News, Analyste) : les modèles propres à un agent sont effacés au changement, et l'agent affiche « Modèle global ».
 - Monkora (ex-Trading Desk) : le dossier de données existant est réutilisé pour ne rien perdre.
 - Ventes à découvert (paper) : trois réglages dans Réglages › Exécution (interrupteur global, un interrupteur par portefeuille, sens des signaux Achats / Ventes / Les deux), tous désactivés par défaut. Le signal est la cassure à la baisse de la fourchette d'ouverture, mêmes horaires et même calendrier que les achats. Les skills d'origine (achat seulement) restent intacts : les agents leur présentent des prix en miroir. Non validé sur données réelles ; le TimeMachine rejoue la cassure en miroir.
+- Liste de surveillance : un instrument peut avoir plusieurs raisons ; chaque ajout est une ligne à part, avec sa propre notification, et se retire seul. Les anciennes listes sont migrées automatiquement au démarrage.
+- Notifications et appels récents des modèles IA : pages de 50, avec navigation 1, 2, 3… en bas du tableau.
+- Réglages › Surveillance et alertes : grille « bento » (liste de surveillance à droite, alerte globale et alertes de prix à gauche, mêmes hauteurs).
 - Logo : `frontend/public/logo.png` ; icônes de bureau : `desktop/build/icon.ico` et `icon.png`.

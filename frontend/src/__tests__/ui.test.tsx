@@ -55,3 +55,13 @@ describe('ui', () => {
     expect(screen.getByText('boum')).toBeTruthy();
   });
 });
+
+describe('pagination', () => {
+  it('liste les pages avec des points de suspension', async () => {
+    const { pageList } = await import('../components/ui');
+    expect(pageList(1, 4)).toEqual([1, 2, 3, 4]);
+    expect(pageList(1, 12)).toEqual([1, 2, '…', 11, 12]);
+    expect(pageList(6, 12)).toEqual([1, 2, '…', 5, 6, 7, '…', 11, 12]);
+    expect(pageList(12, 12)).toEqual([1, 2, '…', 11, 12]);
+  });
+});
