@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Icons, Logo } from './icons';
 import { Confirm, Pill, useToast } from './ui';
 import { MarketSwitcher } from './Market';
@@ -102,6 +103,7 @@ export function Layout() {
 
   useEffect(() => live.start(), []);
   const nav = useNavigate();
+  const loc = useLocation();
   const coalescer = useMemo(() => createCoalescer((n) => { void sendSystemNotification(n); }), []);
   useEffect(() => () => coalescer.dispose(), [coalescer]);
   useEffect(() => window.desktop?.onNotificationOpen?.((route) => nav(route)), [nav]);
@@ -181,7 +183,7 @@ export function Layout() {
       </header>
       <main className="main" id="main">
         {kill && <div className="banner warn" role="status"><b>Interrupteur d’arrêt actif.</b> Les agents analysent mais ne prennent aucune position.</div>}
-        <Outlet />
+        <ErrorBoundary resetKey={loc.pathname}><Outlet /></ErrorBoundary>
       </main>
       <UpdateDialog />
       {confirm && (

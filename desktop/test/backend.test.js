@@ -62,3 +62,19 @@ test('backend EMBARQUÉ (PyInstaller, plate-forme courante) : démarre, sert l�
     assert.equal(d.checks.find((c) => c.name === 'Skills vendorisés').ok, true);
   } finally { await b.stop(); }
 });
+
+test('port stable : même port à chaque lancement, repli si pris ; jeton conservé', async () => {
+  const { stablePort, persistentToken } = require('../src/backend');
+  const net = require('node:net');
+  const p = await freePort();
+  assert.equal(await stablePort(p), p);                        // libre : on garde le port habituel
+  const busy = net.createServer();
+  await new Promise((r) => busy.listen(p, '127.0.0.1', r));
+  const alt = await stablePort(p);                             // pris : repli sur un autre port
+  busy.close();
+  assert.notEqual(alt, p);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'td-tok-'));
+  const t1 = persistentToken(dir);
+  assert.match(t1, /^[0-9a-f]{48}$/);
+  assert.equal(persistentToken(dir), t1);                      // relancé : même jeton
+});

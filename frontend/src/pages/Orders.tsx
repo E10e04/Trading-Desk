@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Async, Banner, Confirm, DataTable, Empty, JsonBlock, KV, Modal, Page, Panel, Pill, Segmented, Tabs, useToast } from '../components/ui';
+import { Async, Banner, BlockTitle, Confirm, DataTable, Empty, JsonBlock, KV, Modal, Page, Panel, Pill, Segmented, Tabs, useToast } from '../components/ui';
 import { OrderModal } from '../components/OrderModal';
 import { PortfolioSelect } from '../components/PortfolioSelect';
 import { api } from '../lib/api';
@@ -24,6 +24,8 @@ export default function Orders() {
   const orders = useApi<{ items: any[] }>(`/api/orders?${q}${filter === 'active' ? '&status=active' : ''}`, 4000);
   const fills = useApi<{ items: any[] }>(tab === 'fills' ? `/api/fills?${q}` : null, 6000);
   const ledger = useApi<{ items: any[] }>(tab === 'ledger' ? `/api/ledger?${q}` : null, 8000);
+  const pipe = useApi<{ auto_execute: boolean }>('/api/pipeline/status', 10000);
+  const enableAuto = async () => { try { await api('/api/settings', { method: 'PUT', body: { auto_execute: true } }); toast('success', 'Exécution automatique activée'); pipe.reload(); props.reload(); } catch (e) { toast('error', 'Réglage refusé', (e as Error).message); } };
   useLiveEvent('order', () => orders.reload());
   useLiveEvent('fill', () => { orders.reload(); fills.reload(); });
   useLiveEvent('proposal', () => props.reload());
@@ -39,6 +41,9 @@ export default function Orders() {
   return (
     <Page title="Ordres" subtitle="Propositions des agents, ordres papier, exécutions et journal du moteur. Toute proposition passe par l’Agent Risk avant d’atteindre le Broker."
       actions={<><PortfolioSelect items={pf.items} value={pf.sel} onChange={pf.setSel} all /><button className="btn primary" onClick={() => setNewOrder(true)} disabled={!pf.items.length}>Ordre manuel</button></>}>
+      {pipe.data && !pipe.data.auto_execute && (
+        <Banner kind="warn"><div className="row between" style={{ gap: 12, flexWrap: 'wrap' }}><span><b>Exécution automatique désactivée.</b> C’est pour cela que des propositions attendent votre approbation : tant que ce réglage est coupé, aucun ordre n’est pris sans votre accord (une proposition expire après 15 min). Il se règle dans Réglages › Exécution.</span><button className="btn sm primary" onClick={enableAuto}>Activer l’exécution automatique</button></div></Banner>
+      )}
       <Tabs value={tab} onChange={setTab} tabs={[{ id: 'props', label: 'Propositions' }, { id: 'orders', label: 'Ordres' }, { id: 'fills', label: 'Exécutions' }, { id: 'ledger', label: 'Journal du moteur' }]} />
       {tab === 'props' && (
         <Panel flush>
@@ -98,10 +103,11 @@ export default function Orders() {
         <Modal title={`Proposition #${detail.id} — ${detail.symbol}`} onClose={() => setDetail(null)}>
           <div className="stack">
             {detail.note && <Banner kind={detail.status === 'executed' ? 'info' : 'warn'}>{detail.note}</Banner>}
+            <BlockTitle title="Résumé" text={[`Statut : ${detail.status}`, `Décision : ${detail.decision}`, `Setup : ${detail.setup}`, `Verdict Risk : ${detail.risk?.verdict ?? '—'}`, `Raisons : ${(detail.risk?.reasons ?? []).join(' · ') || '—'}`, `Corrélation : ${detail.correlation_id}`].join('\n')} />
             <KV rows={[['Statut', detail.status], ['Décision', detail.decision === 'auto' ? 'automatique (politique auto_execute)' : detail.decision], ['Setup', detail.setup], ['Verdict Risk', detail.risk?.verdict], ['Raisons', (detail.risk?.reasons ?? []).join(' · ') || '—'], ['Corrélation', detail.correlation_id]]} />
-            <h3>Plan</h3><JsonBlock data={detail.plan} />
-            <h3>Dimensionnement</h3><JsonBlock data={detail.sizing} />
-            <h3>Contrôle Risk</h3><JsonBlock data={detail.risk} />
+            <BlockTitle title="Plan" text={JSON.stringify(detail.plan, null, 2)} /><JsonBlock data={detail.plan} />
+            <BlockTitle title="Dimensionnement" text={JSON.stringify(detail.sizing, null, 2)} /><JsonBlock data={detail.sizing} />
+            <BlockTitle title="Contrôle Risk" text={JSON.stringify(detail.risk, null, 2)} /><JsonBlock data={detail.risk} />
           </div>
         </Modal>
       )}

@@ -222,6 +222,41 @@ export function Confirm({ title, message, confirmLabel, danger, onConfirm, onClo
   );
 }
 
+/** Copie un texte dans le presse-papiers (avec repli pour les contextes où l'API moderne est refusée). */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const t = document.createElement('textarea');
+      t.value = text;
+      t.style.position = 'fixed';
+      t.style.opacity = '0';
+      document.body.appendChild(t);
+      t.select();
+      const ok = document.execCommand('copy');
+      t.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+export function CopyButton({ text, label = 'Copier' }: { text: string; label?: string }) {
+  const toast = useToast();
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" className="btn sm" onClick={async () => {
+      const ok = await copyText(text);
+      if (ok) { setDone(true); setTimeout(() => setDone(false), 1500); } else toast('error', 'Copie impossible', 'Sélectionnez le texte et copiez-le avec Ctrl+C.');
+    }}>{done ? 'Copié ✓' : label}</button>
+  );
+}
+/** Titre de bloc avec son bouton Copier. */
+export function BlockTitle({ title, text }: { title: string; text: string }) {
+  return <div className="row between" style={{ alignItems: 'center' }}><h3 style={{ margin: 0 }}>{title}</h3><CopyButton text={text} /></div>;
+}
 export function JsonBlock({ data }: { data: unknown }) {
   return <pre className="json">{JSON.stringify(data, null, 2)}</pre>;
 }

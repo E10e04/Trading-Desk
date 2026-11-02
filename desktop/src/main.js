@@ -90,6 +90,11 @@ async function boot() {
       notifier.show({ title: `${APP_NAME} reste actif`, body: 'Les alertes continuent d’arriver. Utilisez l’icône de la zone de notification pour rouvrir ou quitter.', silent: true });
     }
   });
+  // Écran qui ne répond plus ou processus d'affichage tombé : on recharge l'interface au lieu de laisser une fenêtre vide.
+  const reload = () => { if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache(); };
+  win.webContents.on('render-process-gone', (_e, d) => { if (d.reason !== 'clean-exit') setTimeout(reload, 500); });
+  win.webContents.on('did-fail-load', (_e, code, _desc, url, isMain) => { if (isMain && code !== -3 && url.startsWith(backend.url)) setTimeout(reload, 2000); });
+  win.on('unresponsive', () => setTimeout(() => { if (win && !win.isDestroyed()) reload(); }, 8000));
   makeTray();
   await win.loadURL(backend.url);
   Menu.setApplicationMenu(Menu.buildFromTemplate([

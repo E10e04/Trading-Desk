@@ -10,6 +10,20 @@ from .deps import Auth, runtime
 router = APIRouter(prefix="/api", dependencies=[Auth])
 
 
+@router.get("/history/coverage/{symbol}")
+async def history_coverage(symbol: str, rt: Runtime = Depends(runtime)):
+    """Historique 5 min enregistré localement pour un instrument, et avancement vers les 20 séances que demande le TimeMachine."""
+    from ..market import barsdb
+    sym = symbol.upper()
+    if rt.feed.persist_bars:  # choisir l'instrument suffit à démarrer son enregistrement (historique REST sauvegardé au passage)
+        try:
+            await rt.feed.get_bars(sym, "5m", 1000)
+        except Exception:  # noqa: BLE001  source indisponible : on montre ce qui est déjà enregistré
+            pass
+    cov = barsdb.coverage(sym)
+    return {**cov, "full_sessions": barsdb.full_sessions(sym), "needed_sessions": 20, "persisting": rt.feed.persist_bars, "days": barsdb.daily(sym)}
+
+
 @router.get("/instruments")
 def instruments(q: str = "", asset_class: str = "", freshness: str = "", limit: int = Query(200, le=2000), offset: int = 0, rt: Runtime = Depends(runtime)):
     qq = q.strip().lower()

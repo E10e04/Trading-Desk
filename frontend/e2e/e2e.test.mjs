@@ -365,4 +365,32 @@ describe('interface', () => {
     assert.ok(wl.left > all.left + 100, 'la liste de surveillance est la grande carte de droite');
     await ctx.close();
   });
+
+  test('positions : onglet « Détail des ordres » ; réglages : écran Historique ; portefeuille : suppression protégée', async () => {
+    const { ctx, page, errors } = await open('/portfolios');
+    const H = { headers: { Authorization: `Bearer ${TOKEN}` } };
+    const a = (await (await page.request.post(`${BASE}/api/portfolios`, { ...H, data: { name: 'Hist A', capital: 10000, leverage: 10 } })).json()).id;
+    await page.request.post(`${BASE}/api/portfolios`, { ...H, data: { name: 'Hist B', capital: 10000, leverage: 10 } });
+    const o = await page.request.post(`${BASE}/api/orders`, { ...H, data: { portfolio_id: a, symbol: 'EURUSD', side: 'buy', qty: 1000, stop_loss: 1.0, take_profit: 1.5 } });
+    assert.ok(o.ok(), await o.text());
+    await page.goto(`${BASE}/#/positions`);
+    await page.reload();
+    await page.getByRole('tab', { name: 'Détail des ordres' }).click();
+    for (const h of ['Prix d’entrée', 'Stop', 'Take profit']) await page.getByRole('columnheader', { name: h }).waitFor({ timeout: 8000 });
+    await page.getByRole('row', { name: /EURUSD/ }).first().waitFor();
+    await page.goto(`${BASE}/#/settings`);
+    await page.getByRole('tab', { name: 'Historique' }).click();
+    await page.getByText('séances complètes').first().waitFor({ timeout: 8000 });
+    await page.goto(`${BASE}/#/portfolios`);
+    await page.getByRole('cell', { name: 'Hist B', exact: true }).waitFor();
+    const dels = page.getByRole('button', { name: 'Supprimer', exact: true });
+    const states = await dels.evaluateAll((els) => els.map((e) => e.disabled));
+    assert.ok(states.includes(true) && states.includes(false), JSON.stringify(states)); // le portefeuille en cours ne se supprime pas, les autres oui
+    const before = await page.locator('tbody tr').count();
+    await page.locator('tbody tr', { hasText: 'Hist B' }).getByRole('button', { name: 'Supprimer' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Supprimer' }).click();
+    await page.waitForFunction((n) => document.querySelectorAll('tbody tr').length === n - 1, before, { timeout: 8000 });
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
 });

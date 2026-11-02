@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Async, Banner, Confirm, DataTable, Empty, Field, KV, Page, Pager, Panel, Pill, Segmented, Switch, Tabs, useToast } from '../components/ui';
 import { api } from '../lib/api';
-import { useApi } from '../lib/hooks';
+import { useApi, usePersisted } from '../lib/hooks';
 import { useTheme } from '../lib/theme';
 import { useUpdate } from '../lib/update';
 import { InstrumentPicker } from '../components/InstrumentPicker';
@@ -10,7 +10,7 @@ import { useMarket } from '../lib/market';
 import { dateTime, ms, usd } from '../lib/format';
 import { desktopNotifEnabled, requestWebNotifPermission, sendSystemNotification, setDesktopNotifEnabled, webNotifPermission } from '../lib/desktopNotify';
 
-type Tab = 'exec' | 'data' | 'ai' | 'watch' | 'misc';
+type Tab = 'exec' | 'data' | 'ai' | 'watch' | 'hist' | 'misc';
 type Vals = Record<string, any>;
 
 function useSettings() {
@@ -36,12 +36,70 @@ function NumberSetting({ k, vals, save, nullable }: { k: string; vals: Vals; sav
   return <input className="input" style={{ width: 120 }} aria-label={k} inputMode="decimal" value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
 }
 
+/** Historique d'un instrument au choix : prix 5 min enregistrés (avancement vers les 20 séances du TimeMachine) puis ordres et exécutions. */
+function History() {
+  const { instruments, symbol } = useMarket();
+  const [sym, setSym] = usePersisted<string>('hist.symbol', symbol || 'EURUSD');
+  const cov = useApi<any>(sym ? `/api/history/coverage/${sym}` : null, 60000);
+  const ords = useApi<{ items: any[] }>(sym ? `/api/orders?symbol=${sym}&limit=200` : null, 15000);
+  const fills = useApi<{ items: any[] }>(sym ? `/api/fills?symbol=${sym}&limit=200` : null, 15000);
+  const c = cov.data;
+  const day = (t: number) => new Date(t * 1000).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+  const entries = (ords.data?.items ?? []).filter((o) => o.role === 'standalone' || o.role === 'entry');
+  const legOf = (id: number, role: string) => (ords.data?.items ?? []).find((o) => o.parent_id === id && o.role === role);
+  return (
+    <div className="stack">
+      <Panel title="Instrument">
+        <div style={{ maxWidth: 360 }}><InstrumentPicker instruments={instruments} value={sym} onChange={setSym} label="Instrument dont afficher l’historique" /></div>
+      </Panel>
+      <Panel title={`Prix enregistrés (5 min) — ${sym}`} actions={c && <Pill kind={c.full_sessions >= c.needed_sessions ? 'ok' : 'warn'}>{c.full_sessions} / {c.needed_sessions} séances complètes</Pill>}>
+        <Async state={cov}>{() => !c ? null : (
+          <div className="stack">
+            {!c.persisting && <Banner kind="warn">L’enregistrement local est inactif dans ce mode : seul l’historique de la source est affiché.</Banner>}
+            <KV rows={[['Bougies enregistrées', c.bars], ['Première bougie', c.from ? dateTime(new Date(c.from * 1000).toISOString()) : '—'], ['Dernière bougie', c.to ? dateTime(new Date(c.to * 1000).toISOString()) : '—'], ['Séances complètes (TimeMachine)', `${c.full_sessions} sur ${c.needed_sessions} nécessaires`]]} />
+            <div className="muted" style={{ fontSize: 12 }}>La source ne conserve que 3 à 4 jours de bougies 5 minutes. Monkora enregistre les siennes dès que l’application tourne : l’historique grandit chaque jour qu’elle reste ouverte pendant les heures de marché.</div>
+            <DataTable rows={c.days} rowKey={(r: any) => r.day} empty={<Empty title="Aucune bougie enregistrée" hint="L’enregistrement démarre dès que cet instrument est choisi ou surveillé." />} cols={[
+              { key: 'd', header: 'Jour (UTC)', render: (r: any) => day(r.day) },
+              { key: 'o', header: 'Ouverture', num: true, render: (r: any) => r.open },
+              { key: 'h', header: 'Plus haut', num: true, render: (r: any) => r.high },
+              { key: 'l', header: 'Plus bas', num: true, render: (r: any) => r.low },
+              { key: 'c', header: 'Clôture', num: true, render: (r: any) => r.close },
+              { key: 'n', header: 'Bougies', num: true, render: (r: any) => r.bars },
+            ]} />
+          </div>
+        )}</Async>
+      </Panel>
+      <Panel flush title={`Ordres — ${sym}`}>
+        <Async state={ords}>{() => <DataTable rows={entries} rowKey={(r: any) => r.id} empty={<Empty title="Aucun ordre sur cet instrument" />} cols={[
+          { key: 'd', header: 'Date', render: (r: any) => dateTime(r.created_at) },
+          { key: 's', header: 'Sens', render: (r: any) => (r.side === 'sell' ? 'Vente' : 'Achat') },
+          { key: 'q', header: 'Quantité', num: true, render: (r: any) => r.qty },
+          { key: 'e', header: 'Entrée', num: true, render: (r: any) => r.avg_fill_price ?? r.limit_price ?? 'marché' },
+          { key: 'sl', header: 'Stop', num: true, render: (r: any) => legOf(r.id, 'stop_loss')?.stop_price ?? '—' },
+          { key: 'tp', header: 'Take profit', num: true, render: (r: any) => legOf(r.id, 'take_profit')?.limit_price ?? '—' },
+          { key: 'st', header: 'Statut', render: (r: any) => r.status },
+        ]} />}</Async>
+      </Panel>
+      <Panel flush title={`Exécutions — ${sym}`}>
+        <Async state={fills}>{(f) => <DataTable rows={f.items} rowKey={(r: any) => r.id} empty={<Empty title="Aucune exécution sur cet instrument" />} cols={[
+          { key: 'd', header: 'Date', render: (r: any) => dateTime(r.ts) },
+          { key: 's', header: 'Sens', render: (r: any) => (r.side === 'sell' ? 'Vente' : 'Achat') },
+          { key: 'q', header: 'Quantité', num: true, render: (r: any) => r.qty },
+          { key: 'p', header: 'Prix', num: true, render: (r: any) => r.price },
+          { key: 'f', header: 'Frais', num: true, render: (r: any) => r.fee },
+          { key: 'r', header: 'P&L réalisé', num: true, render: (r: any) => r.realized_pnl },
+        ]} />}</Async>
+      </Panel>
+    </div>
+  );
+}
+
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('exec');
   const { st, save } = useSettings();
   return (
     <Page title="Réglages" subtitle="Exécution, données, intelligence artificielle, surveillance et apparence.">
-      <Tabs value={tab} onChange={setTab} tabs={[{ id: 'exec', label: 'Exécution' }, { id: 'data', label: 'Données' }, { id: 'ai', label: 'Intelligence artificielle' }, { id: 'watch', label: 'Surveillance et alertes' }, { id: 'misc', label: 'Apparence et sources' }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ id: 'exec', label: 'Exécution' }, { id: 'data', label: 'Données' }, { id: 'ai', label: 'Intelligence artificielle' }, { id: 'watch', label: 'Surveillance et alertes' }, { id: 'hist', label: 'Historique' }, { id: 'misc', label: 'Apparence et sources' }]} />
       <Async state={st}>
         {(d) => (
           <>
@@ -49,6 +107,7 @@ export default function Settings() {
             {tab === 'data' && <Data vals={d.values} save={save} />}
             {tab === 'ai' && <AI vals={d.values} save={save} />}
             {tab === 'watch' && <Watch vals={d.values} save={save} />}
+            {tab === 'hist' && <History />}
             {tab === 'misc' && <Misc />}
           </>
         )}

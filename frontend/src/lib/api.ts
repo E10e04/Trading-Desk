@@ -62,7 +62,7 @@ function message(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}, retried = false): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -77,6 +77,8 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   }
   if (res.status === 401) {
     setToken(null);
+    // Backend local : le jeton est redonné automatiquement, on rejoue la requête une fois avant de demander la saisie.
+    if (!retried && (await bootstrapToken())) return api<T>(path, opts, true);
     throw new ApiError(401, 'Session expirée : saisissez de nouveau le jeton.');
   }
   const text = await res.text();

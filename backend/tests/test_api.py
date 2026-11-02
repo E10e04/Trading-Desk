@@ -293,3 +293,16 @@ def test_demarrage_public_exige_un_jeton_fourni(monkeypatch):
         check_public_binding("0.0.0.0")
     monkeypatch.setenv("API_TOKEN", "x" * 24)
     check_public_binding("0.0.0.0")
+
+
+def test_suppression_de_portefeuille_et_dernier_protege(client):
+    first = client.post("/api/portfolios", json={"name": "Premier", "capital": 10000, "leverage": 10}).json()["id"]
+    assert client.delete(f"/api/portfolios/{first}").status_code == 400      # le dernier portefeuille ne se supprime pas
+    extra = client.post("/api/portfolios", json={"name": "Second", "capital": 5000, "leverage": 5}).json()["id"]
+    r = client.post("/api/orders", json={"portfolio_id": extra, "symbol": "EURUSD", "side": "buy", "qty": 1000})
+    assert r.status_code in (200, 201), r.text
+    assert client.delete(f"/api/portfolios/{extra}").status_code == 204
+    assert client.get(f"/api/portfolios/{extra}").status_code == 404
+    assert all(p["portfolio_id"] != extra for p in client.get("/api/positions").json()["items"])
+    assert client.get(f"/api/portfolios/{first}").status_code == 200
+    assert client.delete("/api/portfolios/9999").status_code == 404

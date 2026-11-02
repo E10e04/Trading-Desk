@@ -143,7 +143,7 @@ export default function Overview() {
           <Panel title="Dernières exécutions" flush actions={<Link to="/orders">Ordres</Link>}>
             <Async state={fills}>{(d) => d.items.length ? (
               <ul className="rows">{d.items.slice(0, 5).map((f) => (
-                <li key={f.id}><span className="static"><span className={`dot ${f.side === 'buy' ? 'up' : 'down'}`} /><span className="grow"><b>{f.side === 'buy' ? 'Achat' : 'Vente'} {f.symbol}</b><small className="muted">{dateTime(f.ts)}</small></span><span className="num">{qty(f.qty)} @ {f.price}</span></span></li>
+                <li key={f.id}><button title={`Ouvrir ${f.symbol}`} onClick={() => { setSymbol(f.symbol); nav(`/instrument/${f.symbol}`); }}><span className={`dot ${f.side === 'buy' ? 'up' : 'down'}`} /><span className="grow"><b>{f.side === 'buy' ? 'Achat' : 'Vente'} {f.symbol}</b><small className="muted">{dateTime(f.ts)}</small></span><span className="num">{qty(f.qty)} @ {f.price}</span></button></li>
               ))}</ul>
             ) : <Empty title="Aucune exécution" hint="Les positions papier prises par les agents apparaîtront ici." />}</Async>
           </Panel>

@@ -65,6 +65,7 @@ export default function Portfolios() {
   const pf = usePortfolios(5000);
   const [edit, setEdit] = useState<Portfolio | null | 'new'>(null);
   const [reset, setReset] = useState<Portfolio | null>(null);
+  const [del, setDel] = useState<Portfolio | null>(null);
   const p = pf.current;
   const eq = useApi<{ items: { ts: string; equity: number }[] }>(p ? `/api/portfolios/${p.id}/equity?limit=1500` : null, 30000);
   const stats = useApi<any>(p ? `/api/portfolios/${p.id}/stats` : null, 15000);
@@ -83,6 +84,7 @@ export default function Portfolios() {
                 { key: 'r', header: 'Rendement', num: true, render: (r) => <span className={tone(r.return_pct)}>{pct(r.return_pct)}</span> },
                 { key: 'l', header: 'Levier', num: true, hideSm: true, render: (r) => `${r.leverage}x` },
                 { key: 'p', header: 'Positions', num: true, hideSm: true, render: (r) => r.positions.length },
+                { key: 'd', header: '', render: (r) => <span onClick={(e) => e.stopPropagation()}><button className="btn sm danger" disabled={r.id === pf.sel || pf.items.length < 2} title={r.id === pf.sel ? 'Portefeuille en cours d’utilisation : sélectionnez-en un autre pour pouvoir le supprimer' : pf.items.length < 2 ? 'Impossible de supprimer le dernier portefeuille' : `Supprimer ${r.name}`} onClick={() => setDel(r)}>Supprimer</button></span> },
                 { key: 'a', header: 'Actif', render: (r) => <span onClick={(e) => e.stopPropagation()}><Switch checked={r.active} onChange={(v) => toggleActive(r, v)} label={`Activer ${r.name}`} /></span> },
               ]} />
             </Panel>
@@ -108,6 +110,7 @@ export default function Portfolios() {
         )}
       </Async>
       {edit && <Editor p={edit === 'new' ? null : edit} onClose={() => setEdit(null)} onSaved={pf.reload} />}
+      {del && <Confirm title={`Supprimer « ${del.name} » ?`} danger confirmLabel="Supprimer" message={`Le portefeuille, ses positions${del.positions.length ? ` (${del.positions.length} ouverte(s))` : ''}, ses ordres, ses exécutions et sa courbe d’equity seront supprimés définitivement. Cette action est irréversible.`} onConfirm={async () => { try { await api(`/api/portfolios/${del.id}`, { method: 'DELETE' }); toast('success', 'Portefeuille supprimé'); pf.reload(); } catch (e) { toast('error', 'Échec', (e as Error).message); } }} onClose={() => setDel(null)} />}
       {reset && <Confirm title={`Réinitialiser « ${reset.name} » ?`} danger confirmLabel="Réinitialiser" message="Positions, ordres, exécutions et courbe d’equity de ce portefeuille seront effacés ; le capital initial est rétabli." onConfirm={async () => { try { await api(`/api/portfolios/${reset.id}/reset`, { method: 'POST', body: {} }); pf.reload(); } catch (e) { toast('error', 'Échec', (e as Error).message); } }} onClose={() => setReset(null)} />}
     </Page>
   );

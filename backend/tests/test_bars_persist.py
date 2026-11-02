@@ -52,3 +52,13 @@ def test_bougie_live_partielle_ne_remplace_pas_la_bougie_rest(db):
     barsdb.save_bars("EURUSD", "5m", live, overwrite=False)
     got = barsdb.load_older("EURUSD", "5m", 2_000_000, 10)
     assert len(got) == 1 and got[0].h == 1.1
+
+
+def test_seances_completes_et_resume_par_jour(db):
+    day = 20_000 * 86400  # un jour UTC
+    full = [Bar(ts=day + 7 * 3600 + i * 300, o=1, h=2, l=0.5, c=1.5, v=1, closed=True) for i in range(78)]
+    partial = [Bar(ts=day + 86400 + 7 * 3600 + i * 300, o=1, h=1, l=1, c=1, v=1, closed=True) for i in range(50)]
+    barsdb.save_bars("GBPUSD", "5m", full + partial, overwrite=True)
+    assert barsdb.full_sessions("GBPUSD") == 1
+    d = barsdb.daily("GBPUSD")
+    assert [x["bars"] for x in d] == [50, 78] and d[1]["high"] == 2 and d[1]["low"] == 0.5

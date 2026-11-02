@@ -107,7 +107,7 @@ async def test_risk_blocks(ctx):
     # perte max trop grande (limite du portefeuille resserrée)
     ctx.engine.update_portfolio(ctx.pid, risk={**ctx.engine.portfolio_summary(ctx.pid)["risk"], "max_loss_per_trade_usd": 1.0})
     r = await RiskAgent().run(ctx, portfolio_id=ctx.pid)
-    assert r.output["verdict"] == "BLOCK" and any("loss" in x.lower() for x in r.output["reasons"])
+    assert r.output["verdict"] == "BLOCK" and any(("loss" in x.lower() or "perte" in x.lower()) for x in r.output["reasons"])
     assert sz["qty"] > 0
 
 
@@ -180,3 +180,11 @@ async def test_risk_bloque_la_vente_sans_les_interrupteurs(sctx):
     sctx.engine.update_portfolio(sctx.pid, risk={"allow_short": False})
     r3 = await RiskAgent().run(sctx, portfolio_id=sctx.pid)
     assert r3.output["verdict"] == "BLOCK"
+
+
+def test_messages_risk_en_francais():
+    from app.agents.risk import fr
+    assert fr("trades: 3 entries placed today plus 0 passed earlier in this batch, your limit is 3 a day").startswith("limite de trades atteinte : 3 entrée(s)")
+    assert "perte max $5 (limite $10)" in fr("max loss $5 (limit $10), reward:risk 2.00 (min 1)")
+    assert "sur 3" in fr("today before this: 3 of 3 trades, $1 of $2 daily loss")
+    assert fr("message inconnu") == "message inconnu"

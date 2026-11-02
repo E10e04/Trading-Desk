@@ -263,3 +263,12 @@ pre.json { margin: 0; padding: 12px; background: var(--bg); border: 1px solid va
   .bento > .b-all, .bento > .b-rules, .bento > .b-wl { grid-column: 1; grid-row: auto; }
   .bento .tbl-wrap { max-height: 360px; overflow: auto; }
 }
+
+/* Gros montants : jamais de débordement hors de la carte, retour à la ligne si nécessaire */
+.pcard { min-width: 0; }
+.pc-value { font-size: clamp(20px, 2.6vw, 32px); overflow-wrap: anywhere; word-break: break-word; padding-right: 4px; }
+.pc-sub, .pc-grid b { overflow-wrap: anywhere; min-width: 0; }
+.pc-grid > div { min-width: 0; }
+.kpi { min-width: 0; }
+.kpi .v, .kpi .s { overflow-wrap: anywhere; }
+ul.rows li > button .num { overflow-wrap: anywhere; text-align: right; }

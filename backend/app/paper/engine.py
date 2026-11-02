@@ -34,7 +34,7 @@ from ..db import session_scope
 from ..market.feed import MarketFeed
 from ..market.instruments import spec_for
 from ..market.provider import Quote
-from ..models import EquityPoint, Fill, Ledger, Order, Portfolio, Position, utcnow
+from ..models import EquityPoint, Fill, Ledger, Order, Portfolio, Position, Proposal, utcnow
 
 log = logging.getLogger(__name__)
 ORDER_TYPES = ("market", "limit", "stop", "stop_limit")
@@ -172,6 +172,24 @@ class PaperEngine:
             self._ledger(s, pid, "portfolio_reset", pid, {"capital": p.initial_capital})
         self.load_state()
         return self.portfolio_summary(pid)
+
+    def delete_portfolio(self, pid: int) -> None:
+        """Supprime un portefeuille et tout ce qui lui est rattaché. Le dernier portefeuille ne peut pas être supprimé.
+        Le journal (ledger) est conservé : c'est la trace d'audit."""
+        with self._lock, session_scope() as s:
+            p = s.get(Portfolio, pid)
+            if not p:
+                raise KeyError("portefeuille introuvable")
+            if len(list(s.scalars(select(Portfolio.id)))) <= 1:
+                raise ValueError("impossible de supprimer le dernier portefeuille")
+            for model in (Fill, Order, Position, EquityPoint, Proposal):
+                for row in s.scalars(select(model).where(model.portfolio_id == pid)):
+                    s.delete(row)
+            s.flush()
+            name = p.name
+            s.delete(p)
+            self._ledger(s, pid, "portfolio_deleted", pid, {"name": name})
+        self.load_state()
 
     # ------------------------------------------------------------------ valorisation
     def _est_bid_ask(self, q: Quote) -> tuple[float, float, bool]:
@@ -606,20 +624,24 @@ class PaperEngine:
                 "realized_pnl": round(f.realized_pnl, 4), "ts": f.ts.isoformat() + "Z"}
 
     # ------------------------------------------------------------------ lectures
-    def list_orders(self, pid: int | None = None, status: str | None = None, limit: int = 200) -> list[dict]:
+    def list_orders(self, pid: int | None = None, status: str | None = None, limit: int = 200, symbol: str | None = None) -> list[dict]:
         with session_scope() as s:
             stmt = select(Order).order_by(Order.id.desc()).limit(limit)
             if pid:
                 stmt = stmt.where(Order.portfolio_id == pid)
+            if symbol:
+                stmt = stmt.where(Order.symbol == symbol.upper())
             if status == "active":
                 stmt = stmt.where(Order.status.in_(("open", "triggered")))
             elif status:
                 stmt = stmt.where(Order.status == status)
             return [self._order_view(o) for o in s.scalars(stmt)]
 
-    def list_fills(self, pid: int | None = None, limit: int = 200) -> list[dict]:
+    def list_fills(self, pid: int | None = None, limit: int = 200, symbol: str | None = None) -> list[dict]:
         with session_scope() as s:
             stmt = select(Fill).order_by(Fill.id.desc()).limit(limit)
+            if symbol:
+                stmt = stmt.where(Fill.symbol == symbol.upper())
             if pid:
                 stmt = stmt.where(Fill.portfolio_id == pid)
             return [self._fill_view(f) for f in s.scalars(stmt)]

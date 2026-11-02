@@ -57,6 +57,16 @@ def portfolio_update(pid: int, fields: dict[str, Any], rt: Runtime = Depends(run
         raise HTTPException(400, str(e)) from e
 
 
+@router.delete("/portfolios/{pid}", status_code=204)
+def portfolio_delete(pid: int, rt: Runtime = Depends(runtime)):
+    try:
+        rt.engine.delete_portfolio(pid)
+    except KeyError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @router.post("/portfolios/{pid}/reset")
 def portfolio_reset(pid: int, rt: Runtime = Depends(runtime)):
     try:
@@ -103,8 +113,8 @@ def order_create(b: OrderBody, rt: Runtime = Depends(runtime)):
 
 
 @router.get("/orders")
-def orders(portfolio_id: int | None = None, status: str | None = None, limit: int = Query(200, le=1000), rt: Runtime = Depends(runtime)):
-    return {"items": rt.engine.list_orders(portfolio_id, status, limit)}
+def orders(portfolio_id: int | None = None, status: str | None = None, symbol: str | None = None, limit: int = Query(200, le=1000), rt: Runtime = Depends(runtime)):
+    return {"items": rt.engine.list_orders(portfolio_id, status, limit, symbol)}
 
 
 @router.delete("/orders/{oid}")
@@ -131,8 +141,8 @@ def position_close(pid: int, symbol: str, rt: Runtime = Depends(runtime)):
 
 
 @router.get("/fills")
-def fills(portfolio_id: int | None = None, limit: int = Query(200, le=1000), rt: Runtime = Depends(runtime)):
-    return {"items": rt.engine.list_fills(portfolio_id, limit)}
+def fills(portfolio_id: int | None = None, symbol: str | None = None, limit: int = Query(200, le=1000), rt: Runtime = Depends(runtime)):
+    return {"items": rt.engine.list_fills(portfolio_id, limit, symbol)}
 
 
 @router.get("/ledger")

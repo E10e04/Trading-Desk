@@ -15,6 +15,30 @@ function freePort() {
   });
 }
 
+/** Port habituel de Monkora : même adresse à chaque lancement, donc mêmes données locales du navigateur (portefeuille choisi, thème…).
+ *  S'il est déjà pris, on retombe sur un port libre (la sélection ne sera alors pas retrouvée). */
+const PREFERRED_PORT = 47831;
+async function stablePort(preferred = PREFERRED_PORT) {
+  const free = await new Promise((resolve) => {
+    const s = net.createServer();
+    s.once('error', () => resolve(false));
+    s.listen(preferred, '127.0.0.1', () => s.close(() => resolve(true)));
+  });
+  return free ? preferred : freePort();
+}
+
+/** Jeton local conservé d'un lancement à l'autre : l'interface garde son jeton en mémoire, un jeton aléatoire par lancement la rendrait périmée. */
+function persistentToken(dataDir) {
+  const f = path.join(dataDir, '.desktop-token');
+  try {
+    const t = fs.readFileSync(f, 'utf8').trim();
+    if (/^[0-9a-f]{48}$/.test(t)) return t;
+  } catch { /* premier lancement */ }
+  const t = crypto.randomBytes(24).toString('hex');
+  try { fs.writeFileSync(f, t, { mode: 0o600 }); } catch { /* disque en lecture seule : jeton valable pour ce lancement */ }
+  return t;
+}
+
 function health(port, timeoutMs = 1000) {
   return new Promise((resolve) => {
     const req = http.get({ host: '127.0.0.1', port, path: '/api/health', timeout: timeoutMs }, (res) => {
@@ -38,11 +62,11 @@ function backendCommand({ resourcesPath, repoRoot, platform = process.platform, 
   return { cmd: fs.existsSync(py) ? py : 'python3', args: ['-m', 'app.main'], cwd: path.join(repoRoot, 'backend'), dist: path.join(repoRoot, 'frontend', 'dist') };
 }
 
-async function startBackend({ dataDir, resourcesPath, repoRoot, waitMs = 60000, env = process.env, platform } = {}) {
-  const port = await freePort();
-  const token = crypto.randomBytes(24).toString('hex');
+async function startBackend({ dataDir, resourcesPath, repoRoot, waitMs = 60000, env = process.env, platform, preferredPort = PREFERRED_PORT } = {}) {
+  const port = await stablePort(preferredPort);
   const c = backendCommand({ resourcesPath, repoRoot, platform, env });
   fs.mkdirSync(dataDir, { recursive: true });
+  const token = persistentToken(dataDir);
   const child = spawn(c.cmd, c.args, {
     cwd: c.cwd,
     env: { ...env, BACKEND_HOST: '127.0.0.1', BACKEND_PORT: String(port), API_TOKEN: token, TRADING_DATA_DIR: dataDir, ...(c.dist ? { FRONTEND_DIST: c.dist } : {}) },
@@ -74,4 +98,4 @@ function stopBackend(child) {
   });
 }
 
-module.exports = { freePort, health, backendCommand, startBackend, stopBackend };
+module.exports = { PREFERRED_PORT, stablePort, persistentToken, freePort, health, backendCommand, startBackend, stopBackend };

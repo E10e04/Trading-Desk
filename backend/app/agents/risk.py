@@ -31,6 +31,46 @@ def code_of(symbol: str) -> str:
     return risk_code(symbol, _CODES)
 
 
+_FR_RULES: list[tuple[str, str]] = [
+    (r"trades: (\d+) entries placed today plus (\d+) passed earlier in this batch, your limit is (\d+) a day",
+     r"limite de trades atteinte : \1 entrée(s) prise(s) aujourd'hui (+\2 dans ce lot), votre limite est de \3 par jour"),
+    (r"daily limit: (\d+) placed today plus (\d+) passed earlier in this batch, your limit is (\d+) a day",
+     r"limite d'ordres atteinte : \1 ordre(s) aujourd'hui (+\2 dans ce lot), votre limite est de \3 par jour"),
+    (r"daily loss: (\S+) already at risk today plus (\S+) for this one = (\S+), over your (\S+) daily loss limit",
+     r"perte journalière : \1 déjà à risque aujourd'hui + \2 pour cet ordre = \3, au-dessus de votre limite de \4"),
+    (r"loss: (\S+) shares x (\S+) risk a share = (\S+) at the stop, over your (\S+) max loss per trade",
+     r"perte au stop : \1 unités x \2 de risque = \3, au-dessus de votre perte max par trade de \4"),
+    (r"reward:risk: (\S+) \(target (\S+), entry (\S+), stop (\S+)\) is under your minimum (\S+)",
+     r"ratio gain/risque \1 (cible \2, entrée \3, stop \4) sous votre minimum de \5"),
+    (r"size: (\S+) is under your (\S+) minimum order", r"taille : \1 sous votre ordre minimum de \2"),
+    (r"size: (\S+) is over your (\S+) max order", r"taille : \1 au-dessus de votre ordre maximum de \2"),
+    (r"position: (\S+) would be (\S+), (\S+)% of the (\S+) account, over your (\S+)% cap",
+     r"position : \1 vaudrait \2, soit \3 % du compte de \4, au-dessus de votre plafond de \5 %"),
+    (r"stop: no stop\..*", "stop : aucun stop (un stop est obligatoire pour chaque entrée)"),
+    (r"stop: the stop (\S+) must be (below|above) the entry (\S+) for a (buy|sell)",
+     r"stop : le stop \1 doit être sous/au-dessus de l'entrée \3 pour ce sens (\4)"),
+    (r"window: no new entries before (\S+) New York \(it is (\S+)\)", r"fenêtre : pas de nouvelle entrée avant \1 (heure de New York) ; il est \2"),
+    (r"window: no new entries after (\S+) New York \(it is (\S+)\)", r"fenêtre : pas de nouvelle entrée après \1 (heure de New York) ; il est \2"),
+    (r"duplicate: a (buy|sell) (\S+) was already placed today", r"doublon : un ordre \1 sur \2 a déjà été passé aujourd'hui"),
+    (r"blocked: (\S+) is on your blocked list", r"\1 figure sur votre liste d'instruments bloqués"),
+    (r"entry (\S+) \((.*?)\), stop (\S+), target (\S+): risk (\S+) a share", r"entrée \1, stop \3, cible \4 : risque de \5 par unité"),
+    (r"max loss (\S+?)(?: \(limit (\S+)\))?, reward:risk (\S+?)(?: \(min (\S+)\))?$",
+     lambda m: f"perte max {m.group(1)}" + (f" (limite {m.group(2)})" if m.group(2) else "") + f", gain/risque {m.group(3)}" + (f" (minimum {m.group(4)})" if m.group(4) else "")),
+    (r"today before this: (\d+) of (\S+) trades, (\S+) of (\S+) daily loss",
+     r"aujourd'hui avant cet ordre : \1 trade(s) sur \2, \3 de perte sur \4 autorisés"),
+]
+
+
+def fr(msg: str) -> str:
+    """Messages du skill Risk (en anglais) -> français. Un message inconnu est laissé tel quel ; le résultat brut du skill reste dans skill_result."""
+    import re
+    for pat, rep in _FR_RULES:
+        new, n = re.subn(pat, rep, msg, count=1)
+        if n:
+            return new
+    return msg
+
+
 class RiskAgent(Agent):
     id = "risk"
     name = "Agent Risk"
@@ -167,9 +207,9 @@ class RiskAgent(Agent):
                 reasons.append(f"skill risk : {ex}")
             else:
                 r = skill_res["results"][0]
-                reasons += r["reasons"]
-                warnings += r["warnings"] + skill_res.get("warnings", [])
-                info += r["info"]
+                reasons += [fr(x) for x in r["reasons"]]
+                warnings += [fr(x) for x in r["warnings"] + skill_res.get("warnings", [])]
+                info += [fr(x) for x in r["info"]]
                 fingerprint = r["fingerprint"]
                 rr = r["reward_risk"] if r["reward_risk"] is not None else rr
                 max_loss = r["max_loss"] if r["max_loss"] is not None else max_loss
