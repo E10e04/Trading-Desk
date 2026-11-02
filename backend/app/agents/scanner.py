@@ -21,6 +21,7 @@ from .adapt import SessionMapper, Virtual, scan_series, to_virtual_bars
 from .base import Agent, AgentContext, AgentResult, params_of
 from .loader import load_skill
 
+FX_MAJORS = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD"}
 LABELS_FR = {
     "orb_short": "cassure à la baisse de la fourchette d'ouverture (vente à découvert)",
     "breakout_20d": "clôture au-dessus du plus haut des 20 dernières clôtures",
@@ -46,9 +47,9 @@ class ScannerAgent(Agent):
     dependencies = ["BiQuote REST (bougies 5m et 1d)", "flux de cotations"]
     default_interval_s = 300
     default_params = {"modes": ["daily", "orb"], "or_minutes": 15, "max_spread_bps": 25.0, "max_instruments": 300,
-                      "concurrency": 8, "asset_classes": [], "no_entries_after": "15:30", "session_anchor_utc": "07:00",
+                      "concurrency": 8, "asset_classes": [], "forex_majors_only": True, "no_entries_after": "15:30", "session_anchor_utc": "07:00",
                       "watchlist_ttl_h": 12}
-    param_help = {"modes": "daily (clôtures), orb (fourchette d'ouverture)", "or_minutes": "durée de la fourchette d'ouverture (multiple de 5)",
+    param_help = {"forex_majors_only": "forex : ne garder que les paires entre devises majeures (USD, EUR, GBP, JPY, CHF, AUD, NZD, CAD) ; écarte DKK/CZK, HKD/JPY, etc.", "modes": "daily (clôtures), orb (fourchette d'ouverture)", "or_minutes": "durée de la fourchette d'ouverture (multiple de 5)",
                   "max_spread_bps": "ignore les instruments dont le spread dépasse ce nombre de points de base",
                   "asset_classes": "restreindre à forex, metal, energy, crypto, index, equity (vide = toutes)"}
     inputs = ["symbols (optionnel)"]
@@ -65,7 +66,7 @@ class ScannerAgent(Agent):
             return AgentResult("skipped", "Aucun instrument à scanner (aucune cotation fraîche).", {"counts": skipped}, warnings, "none")
         sem = asyncio.Semaphore(int(p["concurrency"]))
         counts = {"requested": len(universe), "fetched_daily": 0, "fetched_5m": 0, "failed": 0, "wide_spread": skipped.get("wide_spread", 0),
-                  "stale": skipped.get("stale", 0), "no_fx": skipped.get("no_fx", 0)}
+                  "stale": skipped.get("stale", 0), "no_fx": skipped.get("no_fx", 0), "exotic_skipped": skipped.get("exotic", 0)}
         failures: dict[str, str] = {}
         daily_data: dict[str, dict] = {}
         intraday: dict[str, tuple[dict, Virtual, SessionMapper, list[Bar]]] = {}
@@ -205,10 +206,14 @@ class ScannerAgent(Agent):
             else:
                 base = sorted(ctx.feed.quotes)
         classes = set(p.get("asset_classes") or [])
+        majors_only = p.get("forex_majors_only", True)
         out = []
         for sym in base:
             inst = ctx.feed.info(sym)
             if classes and inst.asset_class not in classes:
+                continue
+            if majors_only and inst.asset_class == "forex" and not (inst.base_ccy in FX_MAJORS and inst.quote_ccy in FX_MAJORS):
+                sk["exotic"] = sk.get("exotic", 0) + 1  # croisés exotiques (DKK/CZK, HKD/JPY…) : spreads larges et bruit, écartés par défaut
                 continue
             if ctx.feed.freshness(sym)["status"] != "live":
                 sk["stale"] += 1

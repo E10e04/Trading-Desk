@@ -220,6 +220,8 @@ class MarketFeed:
     async def _history(self, symbol: str, tf: str, limit: int) -> list[Bar]:
         key = (symbol, tf)
         ttl = 20.0 if INTERVALS[tf] <= 300 else 60.0
+        if self._hist_cache.get(key) and self._hist_cache[key][2] > 1000:
+            ttl = 300.0  # historique profond (plusieurs appels) : on le garde plus longtemps
         cached = self._hist_cache.get(key)
         if cached and time.monotonic() - cached[0] < ttl:
             _, rows, asked = cached

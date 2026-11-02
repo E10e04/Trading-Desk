@@ -16,6 +16,17 @@ from .base import Agent, AgentContext, AgentResult, params_of
 from .loader import load_skill
 
 
+def _fr(msg: str) -> str:
+    """Messages du skill (en anglais, prix virtuels) -> français, sans chiffres en « $ » trompeurs."""
+    if "too tight" in msg:
+        return "stop trop serré (moins de 0,05 % du prix) : il ne résisterait pas au spread"
+    if "at or above the entry" in msg:
+        return "le stop se trouve du mauvais côté de l'entrée"
+    if "at or below the entry" in msg:
+        return "la cible se trouve du mauvais côté de l'entrée"
+    return msg
+
+
 def _ceil(x: float, digits: int) -> float:
     f = 10 ** digits
     return math.ceil(x * f - 1e-9) / f
@@ -39,10 +50,11 @@ class ExitAgent(Agent):
     ]
     dependencies = ["Agent Entry (signal)", "bougies 5 minutes (stop ATR)"]
     default_params = {"stop": "or-mid", "target": "2R", "flat_by": "15:55", "min_reward_risk": 1.0, "session_anchor_utc": "07:00",
-                      "monitor_enabled": True}
+                      "monitor_enabled": True, "min_stop_pct": 0.15}
     param_help = {"stop": "or-mid, or-low, price:X, pct:X ou atr:K", "target": "2R, 1.5R ou price:X",
                   "flat_by": "heure de sortie forcée (séance mappée HH:MM)",
-                  "monitor_enabled": "clôturer automatiquement à l'heure flat-by"}
+                  "monitor_enabled": "clôturer automatiquement à l'heure flat-by",
+                  "min_stop_pct": "distance minimale du stop en % du prix, utilisée si le stop choisi est plus serré que 0,05 % (0 = refuser le plan comme le skill)"}
     inputs = ["symbol", "entry (prix réel)", "opening_range{high,low}", "entry_time (UTC)", "stop", "target"]
     outputs = ["plan{entry, stop, target, risk_per_unit, reward_risk, flat_by, flat_by_utc}", "warnings"]
 
@@ -94,7 +106,18 @@ class ExitAgent(Agent):
                 if len(sb) < 3:
                     raise x.PlanError(f"un stop ATR demande au moins 3 bougies 5 min clôturées ; {len(sb)} disponibles")
                 atr, atr_n = x.atr_of(sb)
-            c = x.compute(ve, sr, sp, tr, tp, oh, ol, atr, atr_n)
+            try:
+                c = x.compute(ve, sr, sp, tr, tp, oh, ol, atr, atr_n)
+            except x.PlanError as tight:
+                min_pct = float(p.get("min_stop_pct") or 0)
+                if "too tight" not in str(tight) or min_pct <= 0:
+                    raise
+                # Forex et CFD : la fourchette d'ouverture de 15 min est souvent plus étroite que 0,05 % du prix, seuil sous lequel le skill refuse le plan.
+                # Repli : stop à une distance minimale réaliste (en % du prix) ; la cible suit le même multiple de R.
+                sr, sp = x.parse_stop(f"pct:{min_pct}")
+                c = x.compute(ve, sr, sp, tr, tp, oh, ol, atr, atr_n)
+                warnings.append(f"stop « {stop_text} » trop serré pour {symbol} (moins de 0,05 % du prix, il ne résisterait pas au spread) : "
+                                f"remplacé par un stop à {min_pct:g} % de l'entrée")
             day_mapped = x.to_eastern(m.fake_utc(now)).date()
             et = None
             if entry_time:
@@ -102,7 +125,7 @@ class ExitAgent(Agent):
                 et = x.to_eastern(m.fake_utc(et_dt)).time()
             fb, fb_note = x.resolve_flat_by(day_mapped, flat_by, {"flat_by": p["flat_by"]}, et)
         except x.PlanError as ex:
-            return AgentResult("error", f"{symbol} : plan impossible — {ex}", {"symbol": symbol, "error": str(ex)}, warnings, ctx.quality(symbol), symbol)
+            return AgentResult("error", f"{symbol} : plan impossible — {_fr(str(ex))}", {"symbol": symbol, "error": str(ex)}, warnings, ctx.quality(symbol), symbol)
         # achat : stop arrondi vers le bas (loin de l'entrée) ; vente à découvert : vers le haut
         stop_real = _ceil(v.rp(float(c["stop"])), d) if side == "sell" else _floor(v.rp(float(c["stop"])), d)
         entry_real = round(float(entry), d + 1)

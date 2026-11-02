@@ -100,3 +100,16 @@ async def test_scanner_detecte_la_cassure_a_la_baisse_seulement_si_les_ventes_so
     s = by["EURUSD"]["orb_short"]
     assert s["price"] < s["or_low"] < s["or_high"] and 1.0 < s["price"] < 1.2
     assert any("à la baisse" in x for x in by["EURUSD"]["reasons"])
+
+
+async def test_scanner_ignore_les_croisements_exotiques_par_defaut(db, tmp_path):
+    settings_store.reset_cache()
+    feed, prov = make_world({"EURUSD": {"type": "forex", "price": 1.10}, "CADMXN": {"type": "forex", "price": 14.0}},
+                            today=TODAY, now_utc=NOW, orb={"EURUSD": 3, "CADMXN": 3})
+    ctx = make_ctx(feed, NOW, tmp_path)
+    r = await ScannerAgent().run(ctx, symbols=["EURUSD", "CADMXN"])
+    assert "CADMXN" not in {h["symbol"] for h in r.output["hits"]}
+    assert r.output["counts"]["exotic_skipped"] >= 1
+    ctx.agent_params = {"forex_majors_only": False}
+    r2 = await ScannerAgent().run(ctx, symbols=["EURUSD", "CADMXN"])
+    assert r2.output["counts"]["exotic_skipped"] == 0

@@ -45,3 +45,17 @@ async def test_monitor_closes_at_flat_by(ctx):
     assert o["status"] == "filled"
     r = await ExitAgent().run(ctx, mode="monitor")
     assert len(r.output["closed"]) == 1 and not ctx.engine.list_positions(pid)
+
+
+async def test_stop_trop_serre_forex_repli_sur_distance_minimale(ctx):
+    # fourchette d'ouverture minuscule (0,02 % du prix) : le milieu est à ~0,009 % de l'entrée, le skill refuserait le plan
+    orr = {"high": 1.10010, "low": 1.09990}
+    r = await ExitAgent().run(ctx, symbol="EURUSD", entry=1.1001, opening_range=orr, entry_time="2026-10-28T07:20:00Z")
+    assert r.status == "ok", r.summary
+    pl = r.output["plan"]
+    assert abs(pl["entry"] - pl["stop"]) / pl["entry"] >= 0.0014
+    assert any("trop serré" in w for w in r.warnings)
+    # désactivé (0) : on retrouve le refus du skill, en français
+    ctx.agent_params = {"min_stop_pct": 0}
+    bad = await ExitAgent().run(ctx, symbol="EURUSD", entry=1.1001, opening_range=orr, entry_time="2026-10-28T07:20:00Z")
+    assert bad.status == "error" and "trop serré" in bad.summary and "Widen" not in bad.summary

@@ -48,6 +48,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 - `max_instruments` = `300`
 - `concurrency` = `8`
 - `asset_classes` = `[]` — restreindre à forex, metal, energy, crypto, index, equity (vide = toutes)
+- `forex_majors_only` = `True` — forex : ne garder que les paires entre devises majeures (USD, EUR, GBP, JPY, CHF, AUD, NZD, CAD) ; écarte DKK/CZK, HKD/JPY, etc.
 - `no_entries_after` = `15:30`
 - `session_anchor_utc` = `07:00`
 - `watchlist_ttl_h` = `12`
@@ -171,6 +172,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 - `min_reward_risk` = `1.0`
 - `session_anchor_utc` = `07:00`
 - `monitor_enabled` = `True` — clôturer automatiquement à l'heure flat-by
+- `min_stop_pct` = `0.15` — distance minimale du stop en % du prix, utilisée si le stop choisi est plus serré que 0,05 % (0 = refuser le plan comme le skill)
 
 **Écarts avec le skill d'origine et limites.**
 
@@ -205,7 +207,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 - `replays` = `5000` — nombre de futurs simulés (1 à 1 000 000)
 - `seed` = `19` — graine : mêmes chiffres pour les mêmes données
 - `window` = `2` — tolérance (en barres) du rééchantillonnage horaire
-- `bars_limit` = `3200`
+- `bars_limit` = `8200`
 - `session_anchor_utc` = `07:00`
 - `min_edge` = `None` — écart minimal (cible vs seuil de rentabilité) sous lequel le trade est bloqué ; vide = information seulement
 

@@ -152,6 +152,7 @@ class BiquoteProvider(MarketDataProvider):
         self._poll_task: asyncio.Task | None = None
         self._poll_seen: dict[str, Any] = {}
         self.poll_interval = 5.0
+        self.max_history_pages = 9  # 9 000 barres max par symbole
         self.poll_after = 12.0  # secondes sans flux avant de basculer sur le REST
         self._rate_window: list[float] = []
 
@@ -220,12 +221,25 @@ class BiquoteProvider(MarketDataProvider):
                       from_: dt.datetime | None = None, to: dt.datetime | None = None) -> list[Bar]:
         if interval not in INTERVALS:
             raise ProviderError(f"intervalle inconnu: {interval}")
-        params: dict[str, Any] = {"interval": interval, "limit": max(1, min(int(limit), 1000))}  # plafond documenté : 1000
+        want = max(1, int(limit))
+        params: dict[str, Any] = {"interval": interval, "limit": min(want, 1000)}  # plafond documenté : 1000 barres par appel
         if from_:
             params["from"] = from_.strftime("%Y-%m-%dT%H:%M:%SZ")
         if to:
             params["to"] = to.strftime("%Y-%m-%dT%H:%M:%SZ")
-        return parse_bars(await self._get(f"/api/{symbol.upper()}/ohlc", params=params))
+        bars = parse_bars(await self._get(f"/api/{symbol.upper()}/ohlc", params=params))
+        # Au-delà de 1000 barres (TimeMachine : 20 séances), on remonte le temps par pages de 1000 : chaque page se termine juste avant la précédente.
+        pages = 1
+        while len(bars) < want and len(bars) >= 1000 * pages and pages < self.max_history_pages and not from_:
+            end = dt.datetime.fromtimestamp(bars[0].ts - 1, dt.timezone.utc).replace(tzinfo=None)
+            more = parse_bars(await self._get(f"/api/{symbol.upper()}/ohlc", params={"interval": interval, "limit": 1000,
+                                                                                        "to": end.strftime("%Y-%m-%dT%H:%M:%SZ")}))
+            more = [b for b in more if b.ts < bars[0].ts]
+            if not more:
+                break
+            bars = more + bars
+            pages += 1
+        return bars[-want:]
 
     async def news(self, kind: str = "market", **params: Any) -> list[dict]:
         path = "/api/news/search" if kind == "search" else f"/api/news/{kind}"
