@@ -38,6 +38,10 @@ Développement : `cd frontend && npm run dev` (proxy vers le backend, port 5173)
 
 Premiers pas : **Portefeuilles → Nouveau portefeuille**, puis laissez le pipeline tourner (page Vue d'ensemble). Sans portefeuille, aucun agent ne peut prendre de position.
 
+## Déploiement web
+
+Un `Dockerfile` à la racine construit une image unique (backend + interface). Guide pas à pas pour Northflank (plan gratuit) : [docs/DEPLOIEMENT_WEB.md](docs/DEPLOIEMENT_WEB.md). Vercel ne convient pas au backend (processus permanent, WebSocket, base locale).
+
 ## Architecture
 
 ```

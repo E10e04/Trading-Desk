@@ -279,3 +279,17 @@ def test_pagination_des_notifications_et_des_appels_ia(client):
             s.add(LlmUsage(agent_id="news", model="m", ok=True, latency_ms=10, prompt_tokens=1, completion_tokens=1, cost_usd=0.0))
     c = client.get("/api/llm/calls?limit=50&offset=50").json()
     assert c["total"] == 55 and len(c["items"]) == 5
+
+
+def test_demarrage_public_exige_un_jeton_fourni(monkeypatch):
+    import pytest
+    from app.main import check_public_binding
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    check_public_binding("127.0.0.1")  # local : pas d'exigence
+    with pytest.raises(SystemExit):
+        check_public_binding("0.0.0.0")
+    monkeypatch.setenv("API_TOKEN", "court")
+    with pytest.raises(SystemExit):
+        check_public_binding("0.0.0.0")
+    monkeypatch.setenv("API_TOKEN", "x" * 24)
+    check_public_binding("0.0.0.0")

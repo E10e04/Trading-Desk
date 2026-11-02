@@ -61,10 +61,22 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     return app
 
 
+def check_public_binding(host: str) -> None:
+    """Exposé sur Internet (hébergement web) : refuse de démarrer sans API_TOKEN fourni et assez long (un jeton généré localement ne suffit pas)."""
+    import os
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return
+    token = os.environ.get("API_TOKEN", "")
+    if len(token) < 24:
+        raise SystemExit("Démarrage refusé : le backend écoute sur le réseau (BACKEND_HOST=%s). Définissez API_TOKEN (24 caractères minimum, "
+                         "par ex. `openssl rand -hex 24`) : il protège l'accès à l'application." % host)
+
+
 def run() -> None:  # python -m app.main
     import uvicorn
     setup_logging()
     s = get_settings()
+    check_public_binding(s.host)
     uvicorn.run(create_app(), host=s.host, port=s.port, log_level="info")
 
 
