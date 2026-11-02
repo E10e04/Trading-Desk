@@ -11,6 +11,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from ..bus import EventBus
+from . import barsdb
 from .bars import LIVE_TFS, BarStore, aggregate, merge
 from .biquote import INTERVALS, utcnow
 from .instruments import classify, session_profile, spec_for
@@ -42,6 +43,9 @@ class MarketFeed:
         self.started_at: dt.datetime | None = None
         self.instruments_loaded_at: dt.datetime | None = None
         self.subscribe_mode = "all"
+        self.persist_bars = False  # activé par le runtime : enregistre les bougies 5 min dans SQLite
+        self._pending: list[tuple[str, Bar]] = []
+        self._saved_upto: dict[str, int] = {}
 
     # ------------------------------------------------------------------ cycle de vie
     async def start(self) -> None:
@@ -49,6 +53,8 @@ class MarketFeed:
         await self.provider.start_stream(self._on_tick, self._on_state)
         self._bg.append(asyncio.create_task(self._load_catalogue_loop(), name="feed-catalogue"))
         self._bg.append(asyncio.create_task(self._status_loop(), name="feed-status"))
+        if self.persist_bars:
+            self._bg.append(asyncio.create_task(self._persist_loop(), name="feed-persist"))
 
     async def stop(self) -> None:
         for t in self._bg:
@@ -102,6 +108,31 @@ class MarketFeed:
             await asyncio.sleep(2)
             await self.bus.publish("feed_status", self.health())
 
+    async def _persist_loop(self) -> None:
+        last_prune = 0.0
+        while True:
+            await asyncio.sleep(30)
+            self._flush_pending()
+            if time.monotonic() - last_prune > 3600:
+                last_prune = time.monotonic()
+                try:
+                    barsdb.prune()
+                except Exception:  # noqa: BLE001
+                    log.exception("nettoyage des bougies enregistrées en échec")
+
+    def _flush_pending(self) -> None:
+        if not self._pending:
+            return
+        batch, self._pending = self._pending, []
+        by_sym: dict[str, list[Bar]] = {}
+        for sym, b in batch:
+            by_sym.setdefault(sym, []).append(b)
+        try:
+            for sym, bars in by_sym.items():
+                barsdb.save_bars(sym, "5m", bars, overwrite=False)  # une bougie REST complète prime toujours
+        except Exception:  # noqa: BLE001  l'enregistrement ne doit jamais gêner le flux
+            log.exception("enregistrement des bougies 5 min en échec")
+
     # ------------------------------------------------------------------ flux
     def add_listener(self, cb: QuoteListener) -> None:
         self._listeners.append(cb)
@@ -114,6 +145,8 @@ class MarketFeed:
             q.market_state = self.states[q.symbol]
         self.quotes[q.symbol] = q
         for tf, bar in self.bars.update(q):
+            if self.persist_bars and tf == "5m":
+                self._pending.append((q.symbol, bar))
             await self.bus.publish("bar_closed", {"symbol": q.symbol, "tf": tf, "bar": bar.to_dict()})
         for cb in self._listeners:
             try:
@@ -230,10 +263,28 @@ class MarketFeed:
                 return rows[-limit:]
         asked = max(limit, 100)
         bars = await self.provider.history(symbol, tf, limit=asked)
+        if self.persist_bars and tf == "5m":
+            bars = self._with_stored(symbol, tf, bars, asked)
         self._hist_cache[key] = (time.monotonic(), bars, asked)
         if len(self._hist_cache) > 800:
             self._hist_cache.pop(next(iter(self._hist_cache)))
         return bars[-limit:]
+
+    def _with_stored(self, symbol: str, tf: str, bars: list[Bar], want: int) -> list[Bar]:
+        """Enregistre l'historique REST (complet) et le complète vers le passé avec ce qu'on a déjà enregistré."""
+        try:
+            upto = self._saved_upto.get(symbol)
+            fresh = [b for b in bars if b.closed and (upto is None or b.ts >= upto - 600)]
+            if fresh:
+                barsdb.save_bars(symbol, tf, fresh, overwrite=True)
+                self._saved_upto[symbol] = max(b.ts for b in fresh)
+            if len(bars) < want:
+                older = barsdb.load_older(symbol, tf, bars[0].ts if bars else float("inf"), want - len(bars))
+                if older:
+                    return older + bars
+        except Exception:  # noqa: BLE001
+            log.exception("historique enregistré indisponible pour %s", symbol)
+        return bars
 
     # ------------------------------------------------------------------ santé
     def health(self) -> dict[str, Any]:

@@ -249,6 +249,19 @@ class NewsSeen(Base):
     seen_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
+class HistBar(Base):
+    """Bougies 5 min enregistrées localement : BiQuote n'en garde que 3-4 jours, le TimeMachine en veut 20 séances."""
+    __tablename__ = "hist_bars"
+    symbol: Mapped[str] = mapped_column(String(24), primary_key=True)
+    tf: Mapped[str] = mapped_column(String(4), primary_key=True)
+    ts: Mapped[int] = mapped_column(Integer, primary_key=True)  # début de bougie, secondes epoch UTC
+    o: Mapped[float] = mapped_column(Float)
+    h: Mapped[float] = mapped_column(Float)
+    l: Mapped[float] = mapped_column(Float)
+    c: Mapped[float] = mapped_column(Float)
+    v: Mapped[float] = mapped_column(Float, default=0.0)
+
+
 class EquityPoint(Base):
     __tablename__ = "equity_points"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

@@ -3,7 +3,7 @@
 Faits établis à partir du SDK officiel (halitcanbaba/biquote-sdk, v0.3.0) :
   * hub SignalR  : `<base>/hubs/tick` ; méthode serveur `Subscribe(symbol)` (UN symbole par appel) ;
                    événements `ReceiveTick` et `ReceiveSubscriptionState` ;
-  * REST         : /api/symbols, /api/latest (<=100 symboles), /api/{sym}/ohlc (1m 5m 15m 30m 1h 4h 1d, ~1 an),
+  * REST         : /api/symbols, /api/latest (<=100 symboles), /api/{sym}/ohlc (1m 5m 15m 30m 1h 4h 1d ; MESURÉ le 2/11/2026 : 5m seulement ~3-4 jours, 1h plus profond),
                    /api/news/{market|crypto|...}, /api/calendar ;
   * `last` et `volume` valent toujours 0 (CFD) -> le prix est `mid` ; `marketState` / `quoteAgeSeconds` sont fournis.
 Les champs exacts d'un tick au-delà de `symbol` et `mid` ne sont pas documentés dans le SDK : le parseur est

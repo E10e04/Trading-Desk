@@ -34,6 +34,7 @@ class Runtime:
                                                       use_crypto=settings_store.get("crypto_source") == "kraken")
         self.feed = MarketFeed(self.provider, self.bus, live_s=float(settings_store.get("quote_live_s")),
                                hard_stale_s=float(settings_store.get("quote_hard_stale_s")))
+        self.feed.persist_bars = autostart_feed  # historique 5 min conservé en local (BiQuote n'en garde que 3-4 jours)
         self.engine = PaperEngine(self.feed, self.bus)
         self.feed.add_listener(self.engine.on_quote)
         self.llm = llm or OpenRouterClient(SecretStore())
@@ -75,6 +76,7 @@ class Runtime:
         await self.orch.stop()
         if self.autostart_feed:
             await self.feed.stop()
+            self.feed._flush_pending()
         await self.http.aclose()
         aclose = getattr(self.provider, "aclose", None)
         if aclose:
