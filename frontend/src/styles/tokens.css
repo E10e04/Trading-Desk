@@ -14,17 +14,20 @@
   --warning: #e7ad54;
   --error: #e46f79;
   /* dérivés */
-  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
-  --success-soft: color-mix(in srgb, var(--success) 15%, transparent);
-  --warning-soft: color-mix(in srgb, var(--warning) 15%, transparent);
-  --error-soft: color-mix(in srgb, var(--error) 15%, transparent);
-  --hover: color-mix(in srgb, var(--text) 6%, transparent);
-  --row-alt: color-mix(in srgb, var(--panel-2) 35%, transparent);
+  --accent-soft: rgba(100, 136, 245, 0.16);
+  --success-soft: rgba(53, 184, 137, 0.15);
+  --warning-soft: rgba(231, 173, 84, 0.15);
+  --error-soft: rgba(228, 111, 121, 0.15);
+  --hover: rgba(236, 236, 236, 0.06);
+  --row-alt: rgba(48, 48, 48, 0.35);
   --focus: #8fa8ff;
   --on-accent: #0f1522;
-  --card-glow: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 60%);
+  --card-glow: radial-gradient(120% 90% at 100% 0%, rgba(100, 136, 245, 0.13), transparent 60%);
   --shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.28);
-  --grid: color-mix(in srgb, var(--border) 55%, transparent);
+  --grid: rgba(55, 55, 55, 0.55);
+  /* lignes et voiles dérivés en valeurs fixes : Electron 22 (Chromium 108) ne connaît pas color-mix() */
+  --line-accent-50: rgb(78, 96, 150); --line-accent-55: rgb(80, 100, 160); --line-accent-45: rgb(75, 91, 141); --line-text2: rgb(113, 113, 113);
+  --line-error: rgb(142, 83, 88); --line-warning: rgb(143, 114, 70); --border-soft: rgba(55, 55, 55, 0.6); --skeleton-mid: rgb(44, 44, 44); --veil: rgba(38, 38, 38, 0.8);
   --chart-up: #35b889;
   --chart-down: #e46f79;
 }
@@ -41,17 +44,19 @@
   --success: #16845f;
   --warning: #94600d;
   --error: #c53e4c;
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
-  --success-soft: color-mix(in srgb, var(--success) 11%, transparent);
-  --warning-soft: color-mix(in srgb, var(--warning) 12%, transparent);
-  --error-soft: color-mix(in srgb, var(--error) 10%, transparent);
-  --hover: color-mix(in srgb, var(--text) 5%, transparent);
-  --row-alt: color-mix(in srgb, var(--panel-2) 45%, transparent);
+  --accent-soft: rgba(49, 95, 214, 0.10);
+  --success-soft: rgba(22, 132, 95, 0.11);
+  --warning-soft: rgba(148, 96, 13, 0.12);
+  --error-soft: rgba(197, 62, 76, 0.10);
+  --hover: rgba(29, 38, 53, 0.05);
+  --row-alt: rgba(233, 237, 243, 0.45);
   --focus: #1f46b0;
   --on-accent: #ffffff;
-  --card-glow: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%);
+  --card-glow: radial-gradient(120% 90% at 100% 0%, rgba(49, 95, 214, 0.08), transparent 60%);
   --shadow: 0 1px 2px rgba(29, 38, 53, 0.08), 0 6px 18px rgba(29, 38, 53, 0.07);
-  --grid: color-mix(in srgb, var(--border) 70%, transparent);
+  --grid: rgba(216, 222, 232, 0.7);
+  --line-accent-50: rgb(133, 159, 223); --line-accent-55: rgb(124, 152, 222); --line-accent-45: rgb(141, 165, 224); --line-text2: rgb(150, 159, 173);
+  --line-error: rgb(207, 142, 154); --line-warning: rgb(182, 159, 123); --border-soft: rgba(216, 222, 232, 0.6); --skeleton-mid: rgb(242, 244, 248); --veil: rgba(255, 255, 255, 0.8);
   --chart-up: #16845f;
   --chart-down: #c53e4c;
 }
