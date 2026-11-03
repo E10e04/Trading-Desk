@@ -57,7 +57,7 @@ function History() {
           <div className="stack">
             {!c.persisting && <Banner kind="warn">L’enregistrement local est inactif dans ce mode : seul l’historique de la source est affiché.</Banner>}
             <KV rows={[['Bougies enregistrées', c.bars], ['Première bougie', c.from ? dateTime(new Date(c.from * 1000).toISOString()) : '—'], ['Dernière bougie', c.to ? dateTime(new Date(c.to * 1000).toISOString()) : '—'], ['Séances complètes (TimeMachine)', `${c.full_sessions} sur ${c.needed_sessions} nécessaires`]]} />
-            <div className="muted" style={{ fontSize: 12 }}>La source ne conserve que 3 à 4 jours de bougies 5 minutes. Monkora enregistre les siennes dès que l’application tourne : l’historique grandit chaque jour qu’elle reste ouverte pendant les heures de marché.</div>
+            <div className="muted" style={{ fontSize: 12 }}>BiQuote ne conserve que 3 à 4 jours de bougies 5 minutes. Monkora enregistre les siennes dès que l’application tourne, et le complément Yahoo Finance (Réglages › Données) comble le passé (environ 60 jours) quand l’instrument est consulté ou analysé par le TimeMachine.</div>
             <DataTable rows={c.days} rowKey={(r: any) => r.day} empty={<Empty title="Aucune bougie enregistrée" hint="L’enregistrement démarre dès que cet instrument est choisi ou surveillé." />} cols={[
               { key: 'd', header: 'Jour (UTC)', render: (r: any) => day(r.day) },
               { key: 'o', header: 'Ouverture', num: true, render: (r: any) => r.open },
@@ -192,6 +192,7 @@ function Data({ vals, save }: { vals: Vals; save: (p: Vals, ok?: string) => void
       <Row title="Univers du Scanner" hint="live : instruments avec cotation fraîche ; watchlist : liste surveillée ; all : tout le catalogue."><Segmented label="Univers" value={vals.scanner_universe} onChange={(v) => save({ scanner_universe: v })} options={[{ value: 'live', label: 'En direct' }, { value: 'watchlist', label: 'Surveillance' }, { value: 'all', label: 'Tout' }]} /></Row>
       <Row title="Instruments analysés par passage du Scanner"><NumberSetting k="scanner_max_instruments" vals={vals} save={save} /></Row>
       <Row title="Intervalle d’enregistrement de l’equity (s)"><NumberSetting k="equity_snapshot_s" vals={vals} save={save} /></Row>
+      <Row title="Compléter l’historique avec Yahoo Finance" hint="BiQuote ne garde que 3 à 4 jours de bougies 5 minutes ; le TimeMachine en veut 20 séances. Yahoo (environ 60 jours) comble le manque, une fois par 6 h et par instrument. Source non officielle : elle peut cesser de répondre, sans conséquence pour le reste de l’application. Les prix de Yahoo peuvent différer légèrement de ceux de BiQuote."><Switch label="Historique Yahoo Finance" checked={vals.history_yahoo_backfill !== false} onChange={(v) => save({ history_yahoo_backfill: v }, v ? 'Historique Yahoo activé' : 'Historique Yahoo désactivé')} /></Row>
     </Panel>
     </>
   );

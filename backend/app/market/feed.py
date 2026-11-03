@@ -43,6 +43,10 @@ class MarketFeed:
         self.started_at: dt.datetime | None = None
         self.instruments_loaded_at: dt.datetime | None = None
         self.subscribe_mode = "all"
+        self.yahoo: Any = None  # YahooHistory (injecté par le runtime)
+        self.backfill_enabled: Callable[[], bool] = lambda: False
+        self._yahoo_next: dict[str, float] = {}
+        self._yahoo_lock = asyncio.Lock()
         self.persist_bars = False  # activé par le runtime : enregistre les bougies 5 min dans SQLite
         self._pending: list[tuple[str, Bar]] = []
         self._saved_upto: dict[str, int] = {}
@@ -264,11 +268,41 @@ class MarketFeed:
         asked = max(limit, 100)
         bars = await self.provider.history(symbol, tf, limit=asked)
         if self.persist_bars and tf == "5m":
+            if asked > 1000:  # requête profonde (TimeMachine) : on comble d'abord l'historique manquant
+                await self._backfill(symbol)
             bars = self._with_stored(symbol, tf, bars, asked)
         self._hist_cache[key] = (time.monotonic(), bars, asked)
         if len(self._hist_cache) > 800:
             self._hist_cache.pop(next(iter(self._hist_cache)))
         return bars[-limit:]
+
+    async def _backfill(self, symbol: str) -> None:
+        """Complète l'historique 5 min enregistré avec Yahoo Finance (au plus une fois par 6 h et par instrument ; 15 min après un échec)."""
+        if not (self.yahoo and self.backfill_enabled()):
+            return
+        now = time.monotonic()
+        if now < self._yahoo_next.get(symbol, 0.0):
+            return
+        from .yahoo import yahoo_symbol
+        try:
+            ysym = yahoo_symbol(self.info(symbol))
+        except KeyError:
+            return
+        if not ysym:
+            self._yahoo_next[symbol] = now + 86400
+            return
+        async with self._yahoo_lock:  # un appel à la fois, espacés : Yahoo limite les requêtes trop rapprochées
+            try:
+                bars = await self.yahoo.bars_5m(ysym)
+                barsdb.save_bars(symbol, "5m", bars, overwrite=False)  # jamais par-dessus une bougie BiQuote déjà enregistrée
+                self._yahoo_next[symbol] = time.monotonic() + 6 * 3600
+                log.info("historique Yahoo %s : %d bougies 5 min", ysym, len(bars))
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                self._yahoo_next[symbol] = time.monotonic() + 900
+                log.info("historique Yahoo indisponible pour %s : %s", ysym, e)
+            await asyncio.sleep(0.4)
 
     def _with_stored(self, symbol: str, tf: str, bars: list[Bar], want: int) -> list[Bar]:
         """Enregistre l'historique REST (complet) et le complète vers le passé avec ce qu'on a déjà enregistré."""

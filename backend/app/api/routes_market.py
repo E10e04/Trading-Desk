@@ -17,7 +17,7 @@ async def history_coverage(symbol: str, rt: Runtime = Depends(runtime)):
     sym = symbol.upper()
     if rt.feed.persist_bars:  # choisir l'instrument suffit à démarrer son enregistrement (historique REST sauvegardé au passage)
         try:
-            await rt.feed.get_bars(sym, "5m", 1000)
+            await rt.feed.get_bars(sym, "5m", 1200)  # > 1000 : déclenche aussi le complément Yahoo (si activé)
         except Exception:  # noqa: BLE001  source indisponible : on montre ce qui est déjà enregistré
             pass
     cov = barsdb.coverage(sym)

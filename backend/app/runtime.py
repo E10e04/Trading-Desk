@@ -35,6 +35,10 @@ class Runtime:
         self.feed = MarketFeed(self.provider, self.bus, live_s=float(settings_store.get("quote_live_s")),
                                hard_stale_s=float(settings_store.get("quote_hard_stale_s")))
         self.feed.persist_bars = autostart_feed  # historique 5 min conservé en local (BiQuote n'en garde que 3-4 jours)
+        if autostart_feed:
+            from .market.yahoo import YahooHistory
+            self.feed.yahoo = YahooHistory()
+            self.feed.backfill_enabled = lambda: bool(settings_store.get("history_yahoo_backfill"))
         self.engine = PaperEngine(self.feed, self.bus)
         self.feed.add_listener(self.engine.on_quote)
         self.llm = llm or OpenRouterClient(SecretStore())
@@ -77,6 +81,8 @@ class Runtime:
         if self.autostart_feed:
             await self.feed.stop()
             self.feed._flush_pending()
+            if self.feed.yahoo:
+                await self.feed.yahoo.aclose()
         await self.http.aclose()
         aclose = getattr(self.provider, "aclose", None)
         if aclose:

@@ -34,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
     "proposal_ttl_min": 15,              # une proposition en attente d'approbation expire après ce délai
     "sec_user_agent": "",
     "equity_snapshot_s": 60,
+    "history_yahoo_backfill": True,      # complète l'historique 5 min manquant (TimeMachine) avec Yahoo Finance : source non officielle, désactivable
 }
 _cache: dict[str, Any] | None = None
 _lock = threading.Lock()
