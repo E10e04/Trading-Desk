@@ -30,7 +30,8 @@ DEFAULTS: dict[str, Any] = {
     "llm_daily_token_limit": 300000,
     "llm_timeout_s": 45,
     "news_block_on_halt": False,
-    "timemachine_min_edge": None,        # None = informatif ; sinon écart minimal (ex. 0.0 : la cible doit être favorisée) sous lequel Risk bloque
+    "timemachine_required": True,        # la simulation TimeMachine est obligatoire avant tout ordre : sans elle (historique insuffisant), Risk bloque
+    "timemachine_min_edge": -0.05,       # écart (part de cibles atteintes en premier − seuil de rentabilité) sous lequel Risk bloque ; -0.05 = on refuse quand la simulation penche nettement vers le stop ; vide = informatif
     "proposal_ttl_min": 15,              # une proposition en attente d'approbation expire après ce délai
     "sec_user_agent": "",
     "equity_snapshot_s": 60,

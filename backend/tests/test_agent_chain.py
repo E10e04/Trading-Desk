@@ -188,3 +188,21 @@ def test_messages_risk_en_francais():
     assert "perte max $5 (limite $10)" in fr("max loss $5 (limit $10), reward:risk 2.00 (min 1)")
     assert "sur 3" in fr("today before this: 3 of 3 trades, $1 of $2 daily loss")
     assert fr("message inconnu") == "message inconnu"
+
+
+async def test_timemachine_obligatoire_et_verdict_defavorable_bloquent(ctx):
+    *_, prop = await chain(ctx)
+    tm = ctx.results["timemachine"].output
+    assert tm.get("verdict"), "la simulation doit avoir tourné dans la chaîne"
+    # simulation indisponible : Risk bloque (réglage par défaut), et ne bloque plus si on la rend facultative
+    ctx.results["timemachine"] = type(ctx.results["timemachine"])("partial", "x", {"insufficient_data": True, "error": "only 1 full session(s)"})
+    r = await RiskAgent().run(ctx, portfolio_id=ctx.pid)
+    assert r.output["verdict"] == "BLOCK" and any("obligatoire" in x for x in r.output["reasons"])
+    settings_store.update({"timemachine_required": False})
+    r2 = await RiskAgent().run(ctx, portfolio_id=ctx.pid)
+    assert not any("timemachine" in x for x in r2.output["reasons"])
+    settings_store.update({"timemachine_required": True})
+    # verdict qui penche nettement vers le stop : le gate du TimeMachine bloque
+    ctx.results["timemachine"] = type(ctx.results["timemachine"])("ok", "x", {**tm, "gate": "block", "edge": -0.2})
+    r3 = await RiskAgent().run(ctx, portfolio_id=ctx.pid)
+    assert r3.output["verdict"] == "BLOCK" and any("écart" in x for x in r3.output["reasons"])

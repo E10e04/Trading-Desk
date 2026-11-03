@@ -161,6 +161,9 @@ class RiskAgent(Agent):
                 rule("age_du_signal", age <= float(p["max_signal_age_min"]), f"signal vieux de {age} min (max {p['max_signal_age_min']})")
         if timemachine and timemachine.get("gate") == "block":
             rule("timemachine", False, f"écart {timemachine.get('edge')} sous le minimum configuré {timemachine.get('min_edge')}")
+        elif settings_store.get("timemachine_required") and (not timemachine or timemachine.get("insufficient_data") or timemachine.get("verdict") is None):
+            why = (timemachine or {}).get("error") or "aucune simulation disponible"
+            rule("timemachine", False, f"simulation TimeMachine obligatoire avant tout ordre, mais indisponible : {why}")
         elif timemachine and timemachine.get("insufficient_data"):
             rule("timemachine", True, "simulation indisponible (historique insuffisant) : information seulement", "info")
         if news and settings_store.get("news_block_on_halt") and p.get("block_on_high_news"):

@@ -204,7 +204,7 @@ Les skills sont copiés **sans modification** dans `backend/app/vendor/day_trade
 
 **Paramètres par défaut.**
 
-- `replays` = `5000` — nombre de futurs simulés (1 à 1 000 000)
+- `replays` = `10000` — nombre de futurs simulés (1 à 1 000 000)
 - `seed` = `19` — graine : mêmes chiffres pour les mêmes données
 - `window` = `2` — tolérance (en barres) du rééchantillonnage horaire
 - `bars_limit` = `8200`

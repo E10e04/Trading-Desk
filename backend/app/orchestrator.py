@@ -544,13 +544,14 @@ class Orchestrator:
             if p.status != "pending":
                 raise ValueError(f"proposition déjà {p.status}")
             data = {"symbol": p.symbol, "pid": p.portfolio_id, "plan": dict(p.plan or {}), "sizing": dict(p.sizing or {}), "risk": dict(p.risk or {}),
-                    "age_min": (utcnow() - p.ts).total_seconds() / 60.0, "cid": p.correlation_id, "sig": dict((p.context or {}).get("signal") or {})}
+                    "age_min": (utcnow() - p.ts).total_seconds() / 60.0, "cid": p.correlation_id, "sig": dict((p.context or {}).get("signal") or {}),
+                    "tm": dict((p.context or {}).get("timemachine") or {})}
         if reject:
             return self._finish_proposal(proposal_id, "rejected", "refusée par l'utilisateur", decision="user")
         if data["age_min"] > float(settings_store.get("proposal_ttl_min") or 15):
             return self._finish_proposal(proposal_id, "expired", f"proposition trop ancienne ({data['age_min']:.0f} min) : le signal doit être réévalué")
         cid = data["cid"]
-        rk = await self.run_agent("risk", "manual", cid, {}, overrides=self._risk_overrides(), sizing=data["sizing"], signal=data["sig"], portfolio_id=data["pid"])
+        rk = await self.run_agent("risk", "manual", cid, {}, overrides=self._risk_overrides(), sizing=data["sizing"], signal=data["sig"], timemachine=data["tm"], portfolio_id=data["pid"])
         self._update_proposal(proposal_id, risk=rk.output)
         if rk.output.get("verdict") != "PASS":
             return self._finish_proposal(proposal_id, "blocked", "Risk rejoué : " + "; ".join(rk.output.get("reasons", [])[:3]), decision="user")

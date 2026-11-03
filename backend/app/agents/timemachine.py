@@ -38,7 +38,7 @@ class TimeMachineAgent(Agent):
         "Le rejeu historique ne couvre que le setup `orb` (comme le skill).",
     ]
     dependencies = ["Agent Exit (plan)", "historique 5 minutes (≥ 20 séances)"]
-    default_params = {"replays": 5000, "seed": 19, "window": 2, "bars_limit": 8200, "session_anchor_utc": "07:00",
+    default_params = {"replays": 10000, "seed": 19, "window": 2, "bars_limit": 8200, "session_anchor_utc": "07:00",
                       "min_edge": None}
     param_help = {"replays": "nombre de futurs simulés (1 à 1 000 000)", "seed": "graine : mêmes chiffres pour les mêmes données",
                   "window": "tolérance (en barres) du rééchantillonnage horaire",
