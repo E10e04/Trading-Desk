@@ -306,3 +306,22 @@ def test_suppression_de_portefeuille_et_dernier_protege(client):
     assert all(p["portfolio_id"] != extra for p in client.get("/api/positions").json()["items"])
     assert client.get(f"/api/portfolios/{first}").status_code == 200
     assert client.delete("/api/portfolios/9999").status_code == 404
+
+
+def test_suppression_de_portefeuille_avec_ordres_proteges_et_executions(client):
+    client.post("/api/portfolios", json={"name": "Premier", "capital": 10000, "leverage": 10})
+    extra = client.post("/api/portfolios", json={"name": "Second", "capital": 50000, "leverage": 10}).json()["id"]
+    r = client.post("/api/orders", json={"portfolio_id": extra, "symbol": "EURUSD", "side": "buy", "qty": 1000, "stop_loss": 1.0, "take_profit": 1.5})
+    assert r.status_code in (200, 201), r.text
+    assert client.get(f"/api/orders?portfolio_id={extra}").json()["items"]            # ordre d'entrée + jambes stop / cible
+    assert client.delete(f"/api/portfolios/{extra}").status_code == 204
+    assert client.get(f"/api/orders?portfolio_id={extra}").json()["items"] == []
+    assert client.get(f"/api/fills?portfolio_id={extra}").json()["items"] == []
+
+
+def test_reinitialisation_avec_ordres_proteges(client):
+    pid = client.post("/api/portfolios", json={"name": "R", "capital": 10000, "leverage": 10}).json()["id"]
+    client.post("/api/orders", json={"portfolio_id": pid, "symbol": "EURUSD", "side": "buy", "qty": 1000, "stop_loss": 1.0, "take_profit": 1.5})
+    assert client.post(f"/api/portfolios/{pid}/reset").status_code == 200
+    assert client.get(f"/api/orders?portfolio_id={pid}").json()["items"] == []
+    assert client.get(f"/api/portfolios/{pid}").json()["balance"] == 10000

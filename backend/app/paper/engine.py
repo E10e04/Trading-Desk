@@ -26,7 +26,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from .. import settings_store
 from ..bus import EventBus
@@ -165,9 +165,11 @@ class PaperEngine:
             p = s.get(Portfolio, pid)
             if not p:
                 raise KeyError("portefeuille introuvable")
-            for model in (Fill, Order, Position, EquityPoint):
-                for row in s.scalars(select(model).where(model.portfolio_id == pid)):
-                    s.delete(row)
+            s.execute(delete(Fill).where(Fill.portfolio_id == pid))
+            s.execute(delete(Order).where(Order.portfolio_id == pid, Order.parent_id.is_not(None)))  # jambes avant ordres d'entrée (clés étrangères)
+            s.execute(delete(Order).where(Order.portfolio_id == pid))
+            for model in (Position, EquityPoint):
+                s.execute(delete(model).where(model.portfolio_id == pid))
             p.balance, p.realized_pnl, p.fees_paid = p.initial_capital, 0.0, 0.0
             self._ledger(s, pid, "portfolio_reset", pid, {"capital": p.initial_capital})
         self.load_state()
@@ -182,10 +184,12 @@ class PaperEngine:
                 raise KeyError("portefeuille introuvable")
             if len(list(s.scalars(select(Portfolio.id)))) <= 1:
                 raise ValueError("impossible de supprimer le dernier portefeuille")
-            for model in (Fill, Order, Position, EquityPoint, Proposal):
-                for row in s.scalars(select(model).where(model.portfolio_id == pid)):
-                    s.delete(row)
-            s.flush()
+            # Ordre des suppressions imposé par les clés étrangères : exécutions -> jambes de protection -> ordres d'entrée -> reste.
+            s.execute(delete(Fill).where(Fill.portfolio_id == pid))
+            s.execute(delete(Order).where(Order.portfolio_id == pid, Order.parent_id.is_not(None)))
+            s.execute(delete(Order).where(Order.portfolio_id == pid))
+            for model in (Position, EquityPoint, Proposal):
+                s.execute(delete(model).where(model.portfolio_id == pid))
             name = p.name
             s.delete(p)
             self._ledger(s, pid, "portfolio_deleted", pid, {"name": name})
