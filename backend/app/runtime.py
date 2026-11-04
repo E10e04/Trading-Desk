@@ -17,6 +17,7 @@ from .market.feed import MarketFeed
 from .market.composite import CompositeProvider
 from .market.kraken import KrakenProvider
 from .market.provider import MarketDataProvider
+from .notify import notify
 from .orchestrator import Orchestrator
 from .paper.engine import PaperEngine
 
@@ -52,6 +53,14 @@ class Runtime:
     async def start(self) -> None:
         self.bus.attach_loop(asyncio.get_running_loop())
         self.engine.load_state()
+        from . import db as _db
+        if _db.recovery_report:
+            r = _db.recovery_report
+            rows = sum(r.get("tables", {}).values())
+            notify(self.bus, "warning", "system", "Base de données récupérée",
+                   f"Le fichier de données était corrompu. Il a été conservé ({r['backup']}) et une nouvelle base a été créée avec {rows} ligne(s) récupérée(s). "
+                   + ("Non récupéré : " + "; ".join(r["lost"][:3]) if r.get("lost") else ""))
+            _db.recovery_report = None
         if self.autostart_feed:
             await self.feed.start()
         if self.autostart_orchestrator:
@@ -84,6 +93,8 @@ class Runtime:
             if self.feed.yahoo:
                 await self.feed.yahoo.aclose()
         await self.http.aclose()
+        from . import db as _db
+        _db.checkpoint()  # le journal est fusionné dans le fichier principal avant l'arrêt
         aclose = getattr(self.provider, "aclose", None)
         if aclose:
             await aclose()

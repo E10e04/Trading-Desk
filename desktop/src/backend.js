@@ -92,7 +92,7 @@ async function startBackend({ dataDir, resourcesPath, repoRoot, waitMs = 60000, 
 function stopBackend(child) {
   return new Promise((resolve) => {
     if (!child || child.exitCode !== null) return resolve();
-    const t = setTimeout(() => child.kill('SIGKILL'), 5000);
+    const t = setTimeout(() => child.kill('SIGKILL'), 20000);  // laisse au backend le temps de terminer ses écritures (une coupure brute peut abîmer la base)
     child.once('exit', () => { clearTimeout(t); resolve(); });
     child.kill();
   });

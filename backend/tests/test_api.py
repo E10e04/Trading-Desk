@@ -325,3 +325,37 @@ def test_reinitialisation_avec_ordres_proteges(client):
     assert client.post(f"/api/portfolios/{pid}/reset").status_code == 200
     assert client.get(f"/api/orders?portfolio_id={pid}").json()["items"] == []
     assert client.get(f"/api/portfolios/{pid}").json()["balance"] == 10000
+
+
+def test_base_corrompue_recuperee_au_demarrage(tmp_path):
+    import os
+    import sqlite3
+    from app import db as dbm
+    p = tmp_path / "t.sqlite"
+    con = sqlite3.connect(p)
+    con.execute("CREATE TABLE settings (key VARCHAR PRIMARY KEY, value JSON)")
+    con.executemany("INSERT INTO settings VALUES (?, ?)", [(f"k{i}", '"v"') for i in range(2000)])
+    con.commit()
+    con.close()
+    raw = bytearray(p.read_bytes())
+    for off in range(4096 * 2, len(raw), 4096):          # on abîme des pages de données (en-tête intact)
+        raw[off:off + 64] = b"\xff" * 64
+    p.write_bytes(bytes(raw))
+    dbm.recovery_report = None
+    dbm.init_engine(f"sqlite:///{p}")
+    assert dbm.recovery_report is not None
+    assert os.path.exists(dbm.recovery_report["backup"])           # le fichier abîmé est conservé
+    from app.db import session_scope
+    from app.models import Portfolio
+    with session_scope() as s:                                       # la nouvelle base fonctionne
+        s.add(Portfolio(name="x", initial_capital=1.0, balance=1.0))
+    dbm.recovery_report = None
+
+
+def test_base_saine_non_touchee(tmp_path):
+    from app import db as dbm
+    dbm.recovery_report = None
+    dbm.init_engine(f"sqlite:///{tmp_path / 'ok.sqlite'}")
+    dbm.init_engine(f"sqlite:///{tmp_path / 'ok.sqlite'}")           # relance : rien à récupérer
+    assert dbm.recovery_report is None
+    assert not list(tmp_path.glob("*.corrupt-*"))
